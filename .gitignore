@@ -1,0 +1,7 @@
+# local logs & runtime junk
+rrg_update.log
+__pycache__/
+*.pyc
+
+# local editor/tool config
+.claude/
