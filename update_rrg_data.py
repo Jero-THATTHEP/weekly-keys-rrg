@@ -20,6 +20,12 @@ Outputs (written next to this script):
     rrg_current.json   latest RS-Ratio / RS-Momentum / quadrant per asset
     rrg_trails.json    historical path (last TRAIL_LEN points) per asset
 
+AUTOMATED REFRESH
+-----------------
+GitHub Actions (.github/workflows/update-rrg.yml) runs this script every day
+at 07:30 Asia/Bangkok (UTC+7) = 00:30 UTC, commits the JSON if changed, and
+redeploys GitHub Pages. Local alternative: run_rrg_update.bat via Task Scheduler.
+
 The dashboard (index.html) fetches both files, so it must be served over
 HTTP (e.g. `python -m http.server 8123`), not opened via file://.
 
@@ -92,17 +98,17 @@ ASSETS = {
     "Nasdaq Composite":   (["^IXIC"],                    "Developed"),
     "Euro Stoxx 50":      (["^STOXX50E", "FEZ"],         "Developed"),
     "Nikkei 225":         (["^N225", "EWJ"],             "Developed"),
-    "KOSPI":              (["^KS11", "^KOSPI", "EWY"],   "Developed"),
+    "KOSPI":              (["^KS11", "EWY"],             "Developed"),  # ^KOSPI not on Yahoo
     "Hang Seng":          (["^HSI", "EWH"],              "Developed"),
     # Emerging markets
     "TAIEX":              (["^TWII", "EWT"],             "Emerging"),
     "SET Index":          (["^SET.BK", "THD"],           "Emerging"),
-    "MAI Index":          (["^MAI.BK", "^MAI"],          "Emerging"),  # thin Yahoo coverage; skipped if absent
+    "MAI Index":          (["^MAI.BK"],                  "Emerging"),  # thin Yahoo coverage; skipped if absent
     "Shanghai Composite": (["000001.SS", "ASHR"],        "Emerging"),
     "BSE Sensex":         (["^BSESN", "INDA"],           "Emerging"),
     "VN-Index":           (["^VNINDEX.VN", "VNM"],       "Emerging"),
     # FX
-    "DXY":                (["DX-Y.NYB", "DX=F", "UUP"],  "FX"),
+    "DXY":                (["DX-Y.NYB", "UUP"],          "FX"),  # DX=F often missing on Yahoo
     # Commodities (front-month futures)
     "Gold":               (["GC=F"],                     "Commodities"),
     "Silver":             (["SI=F"],                     "Commodities"),
@@ -274,7 +280,13 @@ def main() -> None:
     tickers = sorted({t for cands, _ in ASSETS.values() for t in cands} | {args.benchmark})
     closes = download_closes(tickers)
 
-    generated = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M %Z")
+    # Prefer Asia/Bangkok (UTC+7) so generated_at matches the daily schedule label
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("Asia/Bangkok"))
+    except Exception:
+        now = datetime.now(timezone.utc).astimezone()
+    generated = now.strftime("%Y-%m-%d %H:%M %Z")
     current_out = {"benchmark": args.benchmark, "generated_at": generated,
                    "source": "Yahoo Finance (yfinance)", "timeframes": {}}
     trails_out = {"generated_at": generated, "timeframes": {}}
@@ -303,4 +315,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
+    sys.exit(0)

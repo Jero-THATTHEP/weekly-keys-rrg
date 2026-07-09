@@ -1,11 +1,13 @@
 @echo off
 rem ============================================================
-rem  WEEKLY KEYS - daily RRG data update (run by Task Scheduler)
+rem  WEEKLY KEYS - local RRG data update (optional Task Scheduler)
+rem  Prefer GitHub Actions (daily 07:30 UTC+7) for production.
 rem  1. Runs update_rrg_data.py (downloads Yahoo Finance data,
 rem     recomputes rrg_current.json / rrg_trails.json)
 rem  2. Commits and pushes the fresh JSON to GitHub so the
 rem     GitHub Pages dashboard stays current
 rem  Appends a log to rrg_update.log
+rem  Suggested local schedule: 07:30 Asia/Bangkok (UTC+7)
 rem ============================================================
 chcp 65001 >nul
 set PYTHONIOENCODING=utf-8

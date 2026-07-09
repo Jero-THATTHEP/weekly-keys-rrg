@@ -10,7 +10,7 @@
          python update_rrg_data.py            # both Weekly and Daily
      It downloads real Yahoo Finance history and computes the double-smoothed
      EMA approximation of the JdK RS-Ratio / RS-Momentum, including 10-point
-     historical trails per asset. A scheduled task can run it daily at 18:00.
+     historical trails per asset. GitHub Actions runs this daily at 07:30 UTC+7.
 
   2. Serve this folder over HTTP (fetch() cannot read local JSON via file://):
          python -m http.server 8123
@@ -206,7 +206,8 @@
     <p><span class="font-bold" style="color:var(--ink)">Data source:</span> real historical closing prices from
       <span class="font-semibold">Yahoo Finance</span> (via the <code>yfinance</code> Python library), downloaded and
       recomputed by <code>update_rrg_data.py</code>. Nothing on this page is simulated — every point and trail is
-      calculated from actual market prices. Values refresh when the updater runs (scheduled daily at 18:00).</p>
+      calculated from actual market prices. Values refresh when the updater runs
+      (GitHub Actions daily at <b>07:30 UTC+7</b> / 00:30 UTC).</p>
     <p><span class="font-bold" style="color:var(--ink)">Double-smoothed EMA approximation:</span> for each asset vs the
       benchmark (<span class="benchWord font-semibold">^GSPC</span>):</p>
     <ol class="list-decimal ml-6 space-y-1">

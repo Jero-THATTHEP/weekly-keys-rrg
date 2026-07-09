@@ -1,0 +1,5 @@
+# WEEKLY KEYS — RRG data updater dependencies
+# Install:  pip install -r requirements.txt
+# Then run: python update_rrg_data.py
+yfinance>=0.2.40
+pandas>=2.0.0

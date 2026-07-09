@@ -1,0 +1,87 @@
+# ============================================================================
+# Daily RRG data refresh + GitHub Pages deploy
+# ============================================================================
+# Schedule: 07:30 Asia/Bangkok (UTC+7) = 00:30 UTC every day.
+# Also runnable manually via Actions → "Update RRG data" → Run workflow.
+#
+# Flow:
+#   1. Install yfinance/pandas
+#   2. Run update_rrg_data.py → rrg_current.json + rrg_trails.json
+#   3. Commit & push if JSON changed (GITHUB_TOKEN does not re-trigger other
+#      workflows, so we deploy Pages in the same run)
+#   4. Deploy the repo root to GitHub Pages
+# ============================================================================
+name: Update RRG data
+
+on:
+  schedule:
+    # 00:30 UTC = 07:30 UTC+7 (Indochina / Bangkok)
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update-rrg
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compute RRG (Weekly + Daily)
+        run: python update_rrg_data.py --tf both
+        env:
+          # Quiet yfinance noise; force UTC timestamps in generated_at
+          TZ: Asia/Bangkok
+          PYTHONUNBUFFERED: "1"
+
+      - name: Commit updated JSON
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add rrg_current.json rrg_trails.json
+          if git diff --cached --quiet; then
+            echo "No data changes — nothing to commit"
+          else
+            git commit -m "Auto-update RRG data $(date -u +%Y-%m-%d)"
+            git push origin HEAD:main
+            echo "Pushed updated RRG JSON to main"
+          fi
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # pick up the commit just pushed by the update job
+          ref: main
+          fetch-depth: 1
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
