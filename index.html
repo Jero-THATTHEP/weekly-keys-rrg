@@ -1,506 +1,575 @@
 <!DOCTYPE html>
 <!--
   ============================================================================
-  WEEKLY KEYS — Global JdK RS-Ratio & RS-Momentum Dashboard  (live-data build)
+  WEEKLY KEYS — RRG Terminal  (Bloomberg-terminal style UI, live-data build)
   ============================================================================
-  DATA FLOW
+  DATA FLOW (unchanged from previous UI)
     update_rrg_data.py  ──►  rrg_current.json + rrg_trails.json  ──►  this page
 
-  1. Run the updater (see update_rrg_data.py for full methodology docs):
-         python update_rrg_data.py            # both Weekly and Daily
-     It downloads real Yahoo Finance history and computes the double-smoothed
-     EMA approximation of the JdK RS-Ratio / RS-Momentum, including 10-point
-     historical trails per asset. GitHub Actions runs this daily at 07:30 UTC+7.
-
-  2. Serve this folder over HTTP (fetch() cannot read local JSON via file://):
-         python -m http.server 8123
-     then open  http://localhost:8123/index.html
-
-  EXPECTED JSON STRUCTURE
-    rrg_current.json:
-      { "benchmark": "^GSPC", "generated_at": "...", "source": "...",
-        "timeframes": { "W": { "label":"Weekly", "period":10, "as_of":"YYYY-MM-DD",
-                               "assets":[ { "name","ticker","cls","proxy",
-                                            "x","y","quadrant","perf4w" } ],
-                               "skipped":[ { "name","tickers_tried","reason" } ] },
-                        "D": { ... period:50 ... } } }
-    rrg_trails.json:
-      { "generated_at": "...",
-        "timeframes": { "W": { "as_of":"...", "assets":
-             { "Gold": { "dates":[...], "points":[[x,y],...oldest→newest] } } },
-                        "D": { ... } } }
+  - Single-file React app (React 18 UMD + Babel standalone via CDN), chart is
+    hand-drawn SVG so the quadrant arrows / comet trails match the terminal look.
+  - Loads the same pre-computed JSON as before; Period dropdown switches the
+    real Weekly (N=10) / Daily (N=50) calculations. Range slices the trail.
+  - Serve over HTTP:  python -m http.server 8123  →  localhost:8123/index.html
+  - F1/HELP opens the methodology panel (double-smoothed EMA approximation,
+    Yahoo Finance data — see update_rrg_data.py docstring for full details).
   ============================================================================
 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WEEKLY KEYS — Global JdK RS-Ratio &amp; RS-Momentum Dashboard</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
+<title>WEEKLY KEYS — RRG Terminal</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
   :root{
-    --page:#0a0f1c; --surface:#0e1626; --surface-2:#131d31; --hairline:rgba(255,255,255,.08);
-    --ink:#f3f6fc; --ink-2:#aab6cc; --ink-3:#6b7891;
-    --c-dev:#3987e5; --c-em:#199e70; --c-cmd:#c98500; --c-cry:#9085e9; --c-fx:#e66767;
-    --q-lead:#22c55e; --q-imp:#3b82f6; --q-weak:#eab308; --q-lag:#ef4444;
+    --bg:#000; --bg2:#0a0a0a; --panel:#101010; --line:#2a2a2a;
+    --amber:#ff9f1a; --amber2:#ffb84d; --white:#f2f2f2; --gray:#9a9a9a; --dgray:#5a5a5a;
+    --green-btn:#1c8a1c; --green-btn2:#0f6410; --red-bar:#6b1111; --red-bar2:#4a0c0c;
+    --field:#e8a020; --field-ink:#111;
   }
-  html{background:var(--page)}
-  body{background:var(--page);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-  .card{background:var(--surface);border:1px solid var(--hairline);border-radius:1rem}
-  .pill{display:inline-flex;align-items:center;gap:.35rem;font-size:.72rem;font-weight:600;
-        padding:.2rem .55rem;border-radius:9999px;border:1px solid var(--hairline);
-        background:var(--surface-2);color:var(--ink-2);cursor:pointer;transition:all .15s}
-  .pill:hover{border-color:rgba(255,255,255,.35);color:var(--ink)}
-  .pill .dot{width:.5rem;height:.5rem;border-radius:9999px;flex:none}
-  .pill.active{outline:2px solid rgba(255,255,255,.7);color:var(--ink)}
-  #dataTable tbody tr{cursor:pointer;border-top:1px solid var(--hairline);transition:background .15s}
-  #dataTable tbody tr:hover{background:var(--surface-2)}
-  #dataTable tbody tr.selected{background:rgba(57,135,229,.16);box-shadow:inset 3px 0 0 var(--c-dev)}
-  .num{font-variant-numeric:tabular-nums}
-  .qbadge{font-size:.68rem;font-weight:700;letter-spacing:.02em;padding:.15rem .5rem;border-radius:9999px}
-  .filter-chip{display:inline-flex;align-items:center;gap:.45rem;padding:.35rem .8rem;border-radius:9999px;
-        border:1px solid var(--hairline);background:var(--surface-2);font-size:.8rem;font-weight:600;
-        color:var(--ink-3);cursor:pointer;user-select:none;transition:all .15s}
-  .filter-chip .dot{width:.6rem;height:.6rem;border-radius:9999px;opacity:.35}
-  .filter-chip.on{color:var(--ink)}
-  .filter-chip.on .dot{opacity:1}
-  .tf-btn{padding:.4rem 1rem;font-size:.8rem;font-weight:700;border:1px solid rgba(255,255,255,.25);
-        color:#bcd0f0;background:rgba(255,255,255,.06);cursor:pointer;transition:all .15s}
-  .tf-btn:first-child{border-radius:.5rem 0 0 .5rem}
-  .tf-btn:last-child{border-radius:0 .5rem .5rem 0;border-left:none}
-  .tf-btn.on{background:rgba(255,255,255,.22);color:#fff}
-  code{background:var(--surface-2);border:1px solid var(--hairline);border-radius:.3rem;
-       padding:.05rem .35rem;font-size:.85em}
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{background:var(--bg); color:var(--white);
+    font-family:Arial, Helvetica, sans-serif; font-size:13px; height:100%}
+  #root{min-height:100vh; display:flex; flex-direction:column}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#333}
+  ::-webkit-scrollbar-track{background:#0a0a0a}
+
+  /* ---- top toolbar ---- */
+  .toolbar{display:flex; gap:3px; padding:3px 4px; background:#111; flex-wrap:wrap; align-items:center}
+  .tbtn{background:linear-gradient(#26a626,#157015); color:#fff; border:1px solid #0c4d0c;
+    font-weight:bold; font-size:11px; padding:2px 7px; cursor:pointer; border-radius:2px;
+    font-family:inherit; letter-spacing:.02em}
+  .tbtn:hover{background:linear-gradient(#2fbf2f,#1a8a1a)}
+  .tbtn.gray{background:linear-gradient(#4a4a4a,#2e2e2e); border-color:#222}
+  .toolbar .spacer{flex:1}
+  .wrench{color:#bbb; font-size:13px; padding:0 6px; cursor:default}
+
+  /* ---- breadcrumb ---- */
+  .crumb{display:flex; align-items:center; gap:10px; padding:5px 8px; background:#000;
+    border-bottom:1px solid #1c1c1c; color:#ddd; font-size:13px}
+  .crumb b{color:#fff; font-weight:bold}
+  .crumb .sep{color:#555}
+  .crumb .nav{color:#bbb; cursor:default; user-select:none}
+  .crumb .right{margin-left:auto; color:#bbb; display:flex; gap:14px; font-size:12px}
+
+  /* ---- command line ---- */
+  .cmdline{margin:4px 8px; max-width:720px}
+  .cmdline input{width:100%; background:#050510; border:1px solid #2244aa; color:#8ab4ff;
+    padding:4px 8px; font-family:inherit; font-size:13px; outline:none}
+  .cmdline input:focus{border-color:#3a6fff}
+
+  /* ---- red function bar ---- */
+  .redbar{display:flex; align-items:center; background:linear-gradient(var(--red-bar),var(--red-bar2));
+    border-top:1px solid #7d1a1a; border-bottom:1px solid #300;
+    color:#fff; font-size:13px; padding:0}
+  .redbar .fkey{padding:5px 14px; cursor:pointer; border-right:1px solid rgba(0,0,0,.4);
+    display:flex; align-items:center; gap:6px}
+  .redbar .fkey:hover{background:rgba(255,255,255,.08)}
+  .redbar .fkey .knum{font-style:italic; color:#f6c8c8}
+  .redbar .title{margin-left:auto; padding:5px 14px; font-weight:bold; display:flex; gap:8px; align-items:center}
+
+  /* ---- controls row ---- */
+  .controls{display:flex; flex-wrap:wrap; gap:10px 18px; padding:6px 10px; background:#000;
+    border-bottom:1px solid #1c1c1c; align-items:center}
+  .ctl{display:flex; align-items:center; gap:6px}
+  .ctl label{color:var(--amber); font-size:12px; white-space:nowrap}
+  .ctl select,.ctl input[type=number],.ctl input[type=text]{
+    background:var(--field); color:var(--field-ink); border:1px solid #7a5a10;
+    font-family:inherit; font-size:12px; font-weight:bold; padding:2px 4px; outline:none}
+  .ctl select{cursor:pointer}
+  .ctl input[type=number]{width:52px; text-align:right}
+  .ctl .chk{accent-color:#2f6fd0; width:14px; height:14px; cursor:pointer}
+  .ctl .static{background:var(--field); color:var(--field-ink); font-weight:bold;
+    padding:2px 8px; border:1px solid #7a5a10; font-size:12px}
+
+  /* ---- main split ---- */
+  .main{display:flex; flex:1; min-height:0}
+  .chartwrap{flex:1; min-width:0; display:flex; flex-direction:column; padding:2px 0 4px 4px}
+  .tabstrip{display:flex; color:#bbb; font-size:12px; border-bottom:1px solid #222}
+  .tabstrip div{padding:3px 30px; border-right:1px solid #222; cursor:default}
+  .chartbox{flex:1; min-height:420px; position:relative}
+  .chartbox svg{display:block; width:100%; height:100%}
+
+  /* ---- right panel ---- */
+  .rpanel{width:340px; flex:none; border-left:2px solid #2a2a2a; background:#050505;
+    display:flex; flex-direction:column; min-height:0}
+  .rpanel .phead{background:#151515; color:#ddd; padding:5px 8px; font-size:13px;
+    border-bottom:1px solid #222; display:flex; justify-content:space-between; align-items:center}
+  .rpanel .subhead{background:#101010; color:#eee; padding:4px 8px; font-size:12.5px;
+    border-bottom:1px solid #222; display:flex; justify-content:space-between}
+  .ctable{flex:1; overflow-y:auto}
+  .ctable table{width:100%; border-collapse:collapse; font-size:12px}
+  .ctable th{position:sticky; top:0; background:#181818; color:#ddd; text-align:left;
+    font-weight:normal; padding:3px 6px; border-bottom:1px solid #2a2a2a}
+  .ctable td{padding:2px 6px; color:var(--amber); white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; max-width:190px}
+  .ctable tr{cursor:pointer}
+  .ctable tr:hover td{background:#161616}
+  .ctable tr.dim td{color:#6a5210}
+  .ctable .tick{font-weight:bold}
+  .ctable .chk{accent-color:#2f6fd0; cursor:pointer}
+  .ctable tr.showall td{color:#fff; background:#131313}
+
+  /* ---- status bar ---- */
+  .statusbar{display:flex; gap:18px; flex-wrap:wrap; padding:4px 10px; background:#0d0d0d;
+    border-top:1px solid #222; color:#8a8a8a; font-size:11.5px}
+  .statusbar .live{color:#33cc55; font-weight:bold}
+  .statusbar .warn{color:#d9a520}
+
+  /* ---- tooltip ---- */
+  .tip{position:absolute; pointer-events:none; background:#101820; border:1px solid #3a5a7a;
+    color:#dce8f5; font-size:12px; padding:6px 9px; z-index:30; white-space:nowrap;
+    box-shadow:0 2px 10px rgba(0,0,0,.7)}
+  .tip b{color:#fff}
+  .tip .lbl{color:#7fa8cc}
+
+  /* ---- help modal ---- */
+  .modalback{position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:50;
+    display:flex; align-items:center; justify-content:center; padding:20px}
+  .modal{background:#0a0a0a; border:2px solid var(--amber); max-width:780px; max-height:85vh;
+    overflow-y:auto; padding:18px 22px; font-size:13px; line-height:1.55; color:#ddd}
+  .modal h2{color:var(--amber); font-size:15px; margin-bottom:10px; letter-spacing:.05em}
+  .modal h3{color:var(--amber2); font-size:13px; margin:12px 0 4px}
+  .modal code{color:#8ab4ff; background:#101825; padding:0 5px; border:1px solid #22334a}
+  .modal .close{float:right; background:var(--red-bar); color:#fff; border:1px solid #922;
+    padding:2px 10px; cursor:pointer; font-family:inherit; font-size:12px}
+  .modal ol{margin-left:22px}
+  .errbox{margin:10px; border:1px solid #a03030; background:#180808; color:#ff9090;
+    padding:10px 14px; font-size:13px}
+  .errbox code{color:#8ab4ff}
+
+  @media (max-width:900px){ .rpanel{display:none} }
 </style>
 </head>
-<body class="min-h-screen">
+<body>
+<div id="root"></div>
 
-<!-- ======================= HEADER ======================= -->
-<header class="relative overflow-hidden" style="background:linear-gradient(120deg,#16294d 0%,#1d3a6e 45%,#0f1b33 100%)">
-  <div class="absolute inset-0 opacity-[.12]" aria-hidden="true"
-       style="background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.5) 0 2px,transparent 2px 46px);"></div>
-  <div class="relative max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col lg:flex-row lg:items-end gap-4 lg:gap-6">
-    <div class="flex-1">
-      <h1 class="text-3xl sm:text-4xl font-black italic tracking-tight"
-          style="text-shadow:0 2px 10px rgba(0,0,0,.4)">WEEKLY&nbsp;KEYS</h1>
-      <p class="mt-1 text-sm sm:text-base font-semibold" style="color:#bcd0f0">Global JdK RS-Ratio &amp; RS-Momentum Dashboard</p>
-      <p class="mt-1 text-xs" style="color:#8aa3cf">
-        <span class="inline-flex items-center gap-1 font-semibold" style="color:#7ee2a0">
-          <span class="w-1.5 h-1.5 rounded-full inline-block" style="background:#22c55e"></span>
-          Live data · <span id="srcLabel">Yahoo Finance</span></span>
-        &nbsp;·&nbsp; Benchmark: <span id="benchLabel" class="font-semibold">—</span>
-        &nbsp;·&nbsp; Data as of <span id="asOfLabel" class="font-semibold">—</span>
-        &nbsp;·&nbsp; Generated: <span id="genLabel" class="font-semibold">—</span>
-      </p>
-    </div>
-    <div class="flex flex-wrap items-center gap-3">
-      <div class="flex" role="tablist" aria-label="Timeframe">
-        <button class="tf-btn" data-tf="W" role="tab">Weekly</button>
-        <button class="tf-btn" data-tf="D" role="tab">Daily</button>
-      </div>
-      <button id="methodBtn"
-        class="px-4 py-2 rounded-lg text-sm font-bold bg-white/10 hover:bg-white/20 border border-white/25 transition-colors">
-        ⓘ Methodology
-      </button>
-      <button id="updateBtn" title="Reload the latest JSON produced by update_rrg_data.py"
-        class="px-4 py-2 rounded-lg text-sm font-bold bg-white/10 hover:bg-white/20 border border-white/25 transition-colors">
-        ⟳ Reload Data
-      </button>
-    </div>
-  </div>
-</header>
-
-<main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-
-  <!-- error / notice banners (filled by JS) -->
-  <div id="errorBox" class="hidden card p-4 text-sm" style="border-color:#ef444488;color:#fca5a5"></div>
-  <div id="skippedBox" class="hidden card p-3 text-xs" style="color:var(--ink-2)"></div>
-
-  <!-- ======================= FILTERS ======================= -->
-  <section class="card p-4 flex flex-col lg:flex-row lg:items-center gap-3">
-    <div id="classFilters" class="flex flex-wrap gap-2"></div>
-    <div class="lg:ml-auto w-full lg:w-72">
-      <input id="searchBox" type="search" placeholder="Search asset…"
-        class="w-full px-3 py-2 rounded-lg text-sm bg-[var(--surface-2)] border border-white/10
-               placeholder:text-[var(--ink-3)] focus:outline-none focus:border-blue-400/60">
-    </div>
-  </section>
-
-  <!-- ======================= SCATTER PLOT ======================= -->
-  <section class="card p-2 sm:p-4">
-    <div id="rrgChart" class="w-full" style="height:min(72vh,640px)"></div>
-    <p class="px-2 pb-2 text-[11px]" style="color:var(--ink-3)">
-      Tails = the asset's actual calculated path over the last 10 <span class="tfWord">weekly</span> observations
-      (oldest → newest, computed from real Yahoo Finance prices). Click a point to highlight it in the table below.
-    </p>
-  </section>
-
-  <!-- ======================= QUADRANT CARDS ======================= -->
-  <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div class="card p-5" style="border-top:3px solid var(--q-lead)">
-      <div class="flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full" style="background:var(--q-lead)"></span>
-        <h3 class="font-extrabold tracking-wide">LEADING <span class="font-semibold text-sm" style="color:var(--ink-2)">(โซนนำตลาด)</span></h3>
-      </div>
-      <p class="mt-2 text-sm" style="color:var(--ink-2)">RS-Ratio &gt; 100 and RS-Momentum &gt; 100 → Strong relative strength with improving momentum. Recommended: <span class="font-bold" style="color:var(--q-lead)">Overweight</span>.</p>
-      <div id="pills-Leading" class="mt-3 flex flex-wrap gap-1.5"></div>
-    </div>
-    <div class="card p-5" style="border-top:3px solid var(--q-imp)">
-      <div class="flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full" style="background:var(--q-imp)"></span>
-        <h3 class="font-extrabold tracking-wide">IMPROVING <span class="font-semibold text-sm" style="color:var(--ink-2)">(โซนปรับตัวดีขึ้น)</span></h3>
-      </div>
-      <p class="mt-2 text-sm" style="color:var(--ink-2)">RS-Ratio &lt; 100 but RS-Momentum &gt; 100 → Recovering momentum from a weak position. Recommended: <span class="font-bold" style="color:var(--q-imp)">Accumulate / Watch</span>.</p>
-      <div id="pills-Improving" class="mt-3 flex flex-wrap gap-1.5"></div>
-    </div>
-    <div class="card p-5" style="border-top:3px solid var(--q-weak)">
-      <div class="flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full" style="background:var(--q-weak)"></span>
-        <h3 class="font-extrabold tracking-wide">WEAKENING <span class="font-semibold text-sm" style="color:var(--ink-2)">(โซนอ่อนแอลง)</span></h3>
-      </div>
-      <p class="mt-2 text-sm" style="color:var(--ink-2)">RS-Ratio &gt; 100 but RS-Momentum &lt; 100 → Still relatively strong but momentum is fading. Recommended: <span class="font-bold" style="color:var(--q-weak)">Reduce</span>.</p>
-      <div id="pills-Weakening" class="mt-3 flex flex-wrap gap-1.5"></div>
-    </div>
-    <div class="card p-5" style="border-top:3px solid var(--q-lag)">
-      <div class="flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full" style="background:var(--q-lag)"></span>
-        <h3 class="font-extrabold tracking-wide">LAGGING <span class="font-semibold text-sm" style="color:var(--ink-2)">(โซนล้าหลัง)</span></h3>
-      </div>
-      <p class="mt-2 text-sm" style="color:var(--ink-2)">RS-Ratio &lt; 100 and RS-Momentum &lt; 100 → Weak relative strength with deteriorating momentum. Recommended: <span class="font-bold" style="color:var(--q-lag)">Underweight</span>.</p>
-      <div id="pills-Lagging" class="mt-3 flex flex-wrap gap-1.5"></div>
-    </div>
-  </section>
-
-  <!-- ======================= DATA TABLE ======================= -->
-  <section class="card overflow-hidden">
-    <div class="px-5 pt-4 pb-2 flex items-baseline gap-3 flex-wrap">
-      <h3 class="font-extrabold tracking-wide">ASSET DETAIL</h3>
-      <span id="tableTf" class="qbadge" style="color:#93c5fd;background:#3b82f61f;border:1px solid #3b82f655"></span>
-      <span id="rowCount" class="text-xs" style="color:var(--ink-3)"></span>
-    </div>
-    <div class="overflow-x-auto">
-      <table id="dataTable" class="w-full text-sm min-w-[820px]">
-        <thead>
-          <tr class="text-left text-xs uppercase tracking-wider" style="color:var(--ink-3)">
-            <th class="px-5 py-2">Asset</th>
-            <th class="px-3 py-2">Class</th>
-            <th class="px-3 py-2 text-right">RS-Ratio</th>
-            <th class="px-3 py-2 text-right">RS-Momentum</th>
-            <th class="px-3 py-2">Quadrant</th>
-            <th class="px-3 py-2 text-right">4W vs Benchmark</th>
-            <th class="px-5 py-2">Allocation</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p class="px-5 py-3 text-[11px]" style="color:var(--ink-3)">
-      * = ETF/futures proxy used because Yahoo Finance has no data for the primary index symbol.
-    </p>
-  </section>
-
-  <!-- ======================= METHODOLOGY (also opened by header button) ======================= -->
-  <section id="methodology" class="card p-6 space-y-3 text-sm" style="color:var(--ink-2)">
-    <h3 class="font-extrabold tracking-wide text-base" style="color:var(--ink)">METHODOLOGY &amp; CALCULATION</h3>
-    <p><span class="font-bold" style="color:var(--ink)">Data source:</span> real historical closing prices from
-      <span class="font-semibold">Yahoo Finance</span> (via the <code>yfinance</code> Python library), downloaded and
-      recomputed by <code>update_rrg_data.py</code>. Nothing on this page is simulated — every point and trail is
-      calculated from actual market prices. Values refresh when the updater runs
-      (GitHub Actions daily at <b>07:30 UTC+7</b> / 00:30 UTC).</p>
-    <p><span class="font-bold" style="color:var(--ink)">Double-smoothed EMA approximation:</span> for each asset vs the
-      benchmark (<span class="benchWord font-semibold">^GSPC</span>):</p>
-    <ol class="list-decimal ml-6 space-y-1">
-      <li>Relative Strength <code>RS = Asset Close ÷ Benchmark Close</code></li>
-      <li>First smoothing layer <code>EMA1 = EMA(RS, N)</code></li>
-      <li>Second layer <code>EMA2 = EMA(RS ÷ EMA1, N)</code> → <code>RS-Ratio = EMA2 × 100</code></li>
-      <li><code>RS-Momentum = RS-Ratio ÷ EMA(RS-Ratio, N) × 100</code></li>
-    </ol>
-    <p><span class="font-bold" style="color:var(--ink)">Timeframe periods:</span>
-      <span class="qbadge" style="color:#93c5fd;background:#3b82f61f;border:1px solid #3b82f655">Weekly N = 10</span>
-      (the standard JdK approximation, recommended) and
-      <span class="qbadge" style="color:#93c5fd;background:#3b82f61f;border:1px solid #3b82f655">Daily N = 50</span>
-      (≈ 10 trading weeks), so both views measure a comparable ~2.5-month window; the Daily view simply reacts faster.
-      Weekly bars are Friday closes on a shared calendar (forward-filled), which keeps crypto (7-day markets) and
-      international indices aligned.</p>
-    <p><span class="font-bold" style="color:var(--ink)">Limitations:</span> the true JdK RS-Ratio/RS-Momentum
-      (Julius de Kempenaer / RRG Research) is proprietary and additionally normalizes with a rolling z-score. This
-      open approximation reproduces the rotation behaviour but its absolute values and dispersion differ from
-      StockCharts/Optuma. Axes here auto-scale to the data. Assets without sufficient Yahoo history are listed under
-      the notice banner rather than plotted. Indicative analysis only — not investment advice.</p>
-  </section>
-
-  <p class="text-[11px] text-center pb-6" style="color:var(--ink-3)">
-    การลงทุนมีความเสี่ยง ผู้ลงทุนควรศึกษาข้อมูลและทำความเข้าใจลักษณะสินค้า เงื่อนไขผลตอบแทนและความเสี่ยงอย่างรอบคอบก่อนการลงทุน
-  </p>
-</main>
-
-<!-- ======================= APP ======================= -->
-<script>
+<script type="text/plain" id="app-src">
 "use strict";
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-/* ---------- constants ---------- */
-const CLASS_COLOR = { Developed:"#3987e5", Emerging:"#199e70", Commodities:"#c98500", Crypto:"#9085e9", FX:"#e66767" };
-const CLASS_ORDER = ["Developed","Emerging","FX","Commodities","Crypto"];
-const QUAD = {
-  Leading:   { color:"#22c55e", advice:"Overweight" },
-  Improving: { color:"#3b82f6", advice:"Accumulate / Watch" },
-  Weakening: { color:"#eab308", advice:"Reduce" },
-  Lagging:   { color:"#ef4444", advice:"Underweight" }
+/* ================= configuration ================= */
+
+// terminal-style display codes for each asset (Bloomberg-ish mnemonics)
+const CODE = {
+  "S&P 500":"SPX", "Nasdaq Composite":"CCMP", "Euro Stoxx 50":"SX5E",
+  "Nikkei 225":"NKY", "KOSPI":"KOSPI", "Hang Seng":"HSI",
+  "TAIEX":"TWSE", "SET Index":"SET", "MAI Index":"MAI",
+  "Shanghai Composite":"SHCOMP", "BSE Sensex":"SENSEX", "VN-Index":"VNINDEX",
+  "DXY":"DXY", "Gold":"GC1", "Silver":"SI1", "WTI Crude":"CL1", "Brent Crude":"CO1",
+  "BTC":"XBT", "ETH":"XET", "SOL":"SOL", "XRP":"XRP",
 };
+// fixed per-asset line colors — bright, separable on black (identity-stable:
+// each asset always keeps its own color regardless of filtering)
+const PALETTE = [
+  "#ff4d4d","#ff8c1a","#ffd11a","#a6e22e","#2ecc71","#00e5c3","#29b6f6",
+  "#4d79ff","#9d7bff","#ff5ce1","#ff8fa3","#d4e157","#26ffd7","#8cd9ff",
+  "#dbb2ff","#ffb35c","#7dff8c","#ff6e9c","#6ee7ff","#c9ff3b","#f5f5f5",
+];
+const TOOLBAR = ["GO","F1","F2","F3","F4","PRINT","HELP","MEMC","SEARC","QUOT","QUOT","MONI","NEWS","MSG","MENU","PG BA","PG FW","PORT"];
 
-/* ---------- state ---------- */
-const state = {
-  tf: "W",                                // "W" | "D" — Weekly is the JdK default
-  current: null, trails: null,            // parsed JSON payloads
-  activeClasses: new Set(CLASS_ORDER),
-  search: "", selected: null
-};
+/* ================= data hooks ================= */
 
-/* ---------- data access ---------- */
-const tfCurrent = () => state.current?.timeframes?.[state.tf];
-const tfTrails  = () => state.trails?.timeframes?.[state.tf];
-function visibleAssets(){
-  const blk = tfCurrent(); if (!blk) return [];
-  const q = state.search.trim().toLowerCase();
-  return blk.assets.filter(a => state.activeClasses.has(a.cls) &&
-    (!q || a.name.toLowerCase().includes(q) || a.ticker.toLowerCase().includes(q)));
-}
-const fmt = n => n.toFixed(2);
-const fmtPct = n => n == null ? "—" : (n > 0 ? "+" : "") + n.toFixed(1) + "%";
-
-/* ---------- data loading ---------- */
-async function loadData(){
-  const bust = "?t=" + Date.now();
-  const [cur, trl] = await Promise.all([
-    fetch("rrg_current.json" + bust).then(r => { if (!r.ok) throw new Error("rrg_current.json: HTTP " + r.status); return r.json(); }),
-    fetch("rrg_trails.json"  + bust).then(r => { if (!r.ok) throw new Error("rrg_trails.json: HTTP "  + r.status); return r.json(); })
-  ]);
-  state.current = cur; state.trails = trl;
-}
-function showError(msg){
-  const box = document.getElementById("errorBox");
-  box.classList.remove("hidden");
-  box.innerHTML = `<b>Could not load data.</b> ${msg}<br>
-    <span style="color:var(--ink-2)">Run <code>python update_rrg_data.py</code> to generate the JSON files, and open
-    this page over HTTP (e.g. <code>python -m http.server 8123</code> →
-    <code>http://localhost:8123/index.html</code>) — browsers block <code>fetch()</code> from <code>file://</code>.</span>`;
+function useRrgData(){
+  const [state, set] = useState({ current:null, trails:null, error:null });
+  const load = useCallback(async () => {
+    try {
+      const bust = "?t=" + Date.now();
+      const [cur, trl] = await Promise.all([
+        fetch("rrg_current.json"+bust).then(r => { if(!r.ok) throw new Error("rrg_current.json HTTP "+r.status); return r.json(); }),
+        fetch("rrg_trails.json"+bust).then(r => { if(!r.ok) throw new Error("rrg_trails.json HTTP "+r.status); return r.json(); }),
+      ]);
+      set({ current:cur, trails:trl, error:null });
+    } catch(e){ set(s => ({ ...s, error:e.message })); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  return { ...state, reload:load };
 }
 
-/* ---------- axis auto-range (approximation values cluster near 100) ---------- */
-function axisRange(){
-  const xs = [100], ys = [100];
-  for (const a of tfCurrent().assets){ xs.push(a.x); ys.push(a.y); }
-  const trl = tfTrails();
-  for (const a of visibleAssets()){
-    const t = trl?.assets?.[a.name];
-    if (t) for (const [x, y] of t.points){ xs.push(x); ys.push(y); }
+/* ================= scales & helpers ================= */
+
+function niceTicks(lo, hi){
+  const span = hi - lo;
+  const step = span > 12 ? 2 : span > 6 ? 1 : span > 3 ? 0.5 : 0.25;
+  const t = [];
+  for (let v = Math.ceil(lo/step)*step; v <= hi + 1e-9; v += step) t.push(+v.toFixed(2));
+  return t;
+}
+const fmt2 = n => n.toFixed(2);
+
+/* ================= the RRG chart (hand-drawn SVG) ================= */
+
+function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover, hover }){
+  const wrapRef = useRef(null);
+  const [dim, setDim] = useState({ w:900, h:560 });
+  useEffect(() => {
+    const el = wrapRef.current; if (!el) return;
+    const ro = new ResizeObserver(() => setDim({ w:el.clientWidth, h:el.clientHeight }));
+    ro.observe(el); return () => ro.disconnect();
+  }, []);
+
+  const M = { l:64, r:16, t:10, b:44 };
+  const W = Math.max(dim.w, 480), H = Math.max(dim.h, 380);
+  const pw = W - M.l - M.r, ph = H - M.t - M.b;
+
+  // gather every visible coordinate (heads + shown trail slice), pad, include 100
+  const pts = [[100,100]];
+  for (const a of assets){
+    const t = trails?.[a.name];
+    const path = t ? t.points.slice(-range) : [[a.x, a.y]];
+    (showTrail ? path : path.slice(-1)).forEach(p => pts.push(p));
   }
-  const pad = (lo, hi) => { const p = Math.max((hi - lo) * .08, .6); return [lo - p, hi + p]; };
-  return { x: pad(Math.min(...xs), Math.max(...xs)), y: pad(Math.min(...ys), Math.max(...ys)) };
-}
+  let xlo = Math.min(...pts.map(p=>p[0])), xhi = Math.max(...pts.map(p=>p[0]));
+  let ylo = Math.min(...pts.map(p=>p[1])), yhi = Math.max(...pts.map(p=>p[1]));
+  const padx = Math.max((xhi-xlo)*.07, .5), pady = Math.max((yhi-ylo)*.10, .4);
+  xlo -= padx; xhi += padx; ylo -= pady; yhi += pady;
+  const X = v => M.l + (v - xlo)/(xhi - xlo)*pw;
+  const Y = v => M.t + (yhi - v)/(yhi - ylo)*ph;
 
-/* ---------- chart ---------- */
-function buildTraces(){
-  const vis = visibleAssets(), trl = tfTrails();
-  const traces = [];
-  for (const cls of CLASS_ORDER){                        // trails under head markers
-    const tx = [], ty = [];
-    for (const a of vis.filter(v => v.cls === cls)){
-      const t = trl?.assets?.[a.name]; if (!t) continue;
-      t.points.forEach(p => { tx.push(p[0]); ty.push(p[1]); });
-      tx.push(null); ty.push(null);
+  const cx = X(100), cy = Y(100);
+
+  // rotation arrows (clockwise flow), drawn as thick translucent arcs
+  const arrows = [];
+  {
+    const aw = Math.min(pw, ph) * 0.16;                       // arrow thickness
+    const rx = pw*0.28, ry = ph*0.30;                         // arc radii
+    const mk = (x1,y1,qx,qy,x2,y2,color,id) => (
+      <g key={id} opacity="0.30">
+        <path d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`} stroke={color}
+          strokeWidth={aw} fill="none" strokeLinecap="butt"/>
+        <path d={`M ${x2} ${y2} Q ${qx} ${qy} ${x1} ${y1}`} stroke="none" fill="none"/>
+        <ArrowHead x={x2} y={y2} qx={qx} qy={qy} size={aw*0.95} color={color}/>
+      </g>);
+    arrows.push(mk(cx - rx*0.9, cy - ry*0.55, cx - rx*0.2, cy - ry*1.15, cx + rx*0.75, cy - ry*0.75, "#1e7a1e", "arrN")); // top: improving→leading
+    arrows.push(mk(cx + rx*0.75, cy - ry*0.55, cx + rx*1.15, cy + ry*0.10, cx + rx*0.70, cy + ry*0.80, "#8a7500", "arrE")); // right: →weakening
+    arrows.push(mk(cx + rx*0.85, cy + ry*0.70, cx + rx*0.15, cy + ry*1.20, cx - rx*0.70, cy + ry*0.75, "#6e2410", "arrS")); // bottom: →lagging
+    arrows.push(mk(cx - rx*0.80, cy + ry*0.60, cx - rx*1.15, cy - ry*0.05, cx - rx*0.70, cy - ry*0.70, "#1c4e6e", "arrW")); // left: →improving
+  }
+
+  const xticks = niceTicks(xlo, xhi), yticks = niceTicks(ylo, yhi);
+
+  // hover hit-testing over every drawn point
+  const hitPoints = [];
+  for (const a of assets){
+    const t = trails?.[a.name];
+    const path = t ? t.points.slice(-range) : [[a.x, a.y]];
+    const dates = t ? t.dates.slice(-range) : [null];
+    const shown = showTrail ? path : path.slice(-1);
+    const shownDates = showTrail ? dates : dates.slice(-1);
+    shown.forEach((p, i) => hitPoints.push({
+      a, x:p[0], y:p[1], px:X(p[0]), py:Y(p[1]),
+      date:shownDates[i], head:i === shown.length-1 }));
+  }
+  const onMove = e => {
+    const r = wrapRef.current.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    let best = null, bd = 14*14;
+    for (const hp of hitPoints){
+      const d = (hp.px-mx)**2 + (hp.py-my)**2;
+      if (d < bd){ bd = d; best = hp; }
     }
-    traces.push({ x:tx, y:ty, mode:"lines+markers", type:"scatter",
-      line:{ color:CLASS_COLOR[cls], width:1.4 },
-      marker:{ size:4, color:CLASS_COLOR[cls], opacity:.55 },
-      opacity:.5, hoverinfo:"skip", showlegend:false, legendgroup:cls });
-  }
-  for (const cls of CLASS_ORDER){                        // head markers
-    const members = vis.filter(v => v.cls === cls);
-    traces.push({
-      name:cls, legendgroup:cls, type:"scatter", mode:"markers+text",
-      x:members.map(a => a.x), y:members.map(a => a.y),
-      text:members.map(a => a.name + (a.proxy ? "*" : "")),
-      textposition:"top center", textfont:{ size:10, color:"#aab6cc" },
-      customdata:members.map(a => [a.name, a.quadrant, fmtPct(a.perf4w), a.ticker]),
-      hovertemplate:"<b>%{customdata[0]}</b> (%{customdata[3]})<br>" + cls +
-        "<br>RS-Ratio: %{x:.2f}<br>RS-Momentum: %{y:.2f}" +
-        "<br>Quadrant: %{customdata[1]}<br>4W vs BM: %{customdata[2]}<extra></extra>",
-      marker:{
-        size:members.map(a => a.name === state.selected ? 16 : 10),
-        color:CLASS_COLOR[cls], symbol:"square",
-        line:{ width:members.map(a => a.name === state.selected ? 3 : 1),
-               color:members.map(a => a.name === state.selected ? "#ffffff" : "rgba(255,255,255,.35)") } }
-    });
-  }
-  traces.push({ name:"Benchmark", type:"scatter", mode:"markers",  // benchmark reference
-    x:[100], y:[100],
-    marker:{ size:13, symbol:"diamond", color:"#f3f6fc", line:{ width:1.5, color:"#0e1626" } },
-    hovertemplate:`<b>Benchmark ${state.current?.benchmark ?? ""}</b><br>(100, 100)<extra></extra>` });
-  return traces;
-}
-
-function chartLayout(){
-  const r = axisRange(), [x0,x1] = r.x, [y0,y1] = r.y;
-  const zone = (rx0,rx1,ry0,ry1,color) => ({ type:"rect", xref:"x", yref:"y",
-    x0:rx0, x1:rx1, y0:ry0, y1:ry1, fillcolor:color, opacity:.10, line:{ width:0 }, layer:"below" });
-  const dx = (x1-x0)*.02, dy = (y1-y0)*.03;
-  return {
-    paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"#0b1220",
-    font:{ family:'system-ui,-apple-system,"Segoe UI",sans-serif', color:"#aab6cc" },
-    margin:{ l:56, r:16, t:70, b:48 },
-    xaxis:{ title:{ text:"JdK RS-Ratio", font:{ size:12 } }, range:r.x,
-      gridcolor:"rgba(255,255,255,.06)", zeroline:false, tickfont:{ size:11 } },
-    yaxis:{ title:{ text:"JdK RS-Momentum", font:{ size:12 } }, range:r.y,
-      gridcolor:"rgba(255,255,255,.06)", zeroline:false, tickfont:{ size:11 } },
-    legend:{ orientation:"h", y:1.02, yanchor:"bottom", x:0, font:{ size:11 }, bgcolor:"rgba(0,0,0,0)" },
-    hoverlabel:{ bgcolor:"#131d31", bordercolor:"rgba(255,255,255,.2)", font:{ color:"#f3f6fc", size:12 } },
-    shapes:[
-      zone(100,x1,100,y1, QUAD.Leading.color),  zone(x0,100,100,y1, QUAD.Improving.color),
-      zone(100,x1,y0,100, QUAD.Weakening.color), zone(x0,100,y0,100, QUAD.Lagging.color),
-      { type:"line", x0:100, x1:100, y0:y0, y1:y1, line:{ color:"rgba(255,255,255,.35)", width:1, dash:"dot" } },
-      { type:"line", x0:x0, x1:x1, y0:100, y1:100, line:{ color:"rgba(255,255,255,.35)", width:1, dash:"dot" } }
-    ],
-    annotations:[
-      { x:x1-dx, y:y1-dy, text:"LEADING",   xanchor:"right", yanchor:"top",    showarrow:false, font:{ size:12, color:QUAD.Leading.color },   opacity:.85 },
-      { x:x0+dx, y:y1-dy, text:"IMPROVING", xanchor:"left",  yanchor:"top",    showarrow:false, font:{ size:12, color:QUAD.Improving.color }, opacity:.85 },
-      { x:x1-dx, y:y0+dy, text:"WEAKENING", xanchor:"right", yanchor:"bottom", showarrow:false, font:{ size:12, color:QUAD.Weakening.color }, opacity:.85 },
-      { x:x0+dx, y:y0+dy, text:"LAGGING",   xanchor:"left",  yanchor:"bottom", showarrow:false, font:{ size:12, color:QUAD.Lagging.color },   opacity:.85 }
-    ]
+    onHover(best ? { ...best, mx, my } : null);
   };
+
+  return (
+    <div className="chartbox" ref={wrapRef} onMouseMove={onMove} onMouseLeave={() => onHover(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        {/* plot frame */}
+        <rect x={M.l} y={M.t} width={pw} height={ph} fill="#050505" stroke="#3a3a3a"/>
+        {/* quadrant labels */}
+        <text x={M.l+10} y={M.t+30} fill="#6a6a6a" fontSize="26" fontWeight="bold" opacity=".8">Improving</text>
+        <text x={W-M.r-10} y={M.t+30} fill="#6a6a6a" fontSize="26" fontWeight="bold" textAnchor="end" opacity=".8">Leading</text>
+        <text x={M.l+10} y={H-M.b-12} fill="#6a6a6a" fontSize="26" fontWeight="bold" opacity=".8">Lagging</text>
+        <text x={W-M.r-10} y={H-M.b-12} fill="#6a6a6a" fontSize="26" fontWeight="bold" textAnchor="end" opacity=".8">Weakening</text>
+        {arrows}
+        {/* grid */}
+        {xticks.map(v => <line key={"gx"+v} x1={X(v)} y1={M.t} x2={X(v)} y2={H-M.b} stroke="#1c1c1c"/>)}
+        {yticks.map(v => <line key={"gy"+v} x1={M.l} y1={Y(v)} x2={W-M.r} y2={Y(v)} stroke="#1c1c1c"/>)}
+        {/* dashed centre cross at (100,100) */}
+        <line x1={cx} y1={M.t} x2={cx} y2={H-M.b} stroke="#cfcfcf" strokeDasharray="5 5" strokeWidth="1"/>
+        <line x1={M.l} y1={cy} x2={W-M.r} y2={cy} stroke="#cfcfcf" strokeDasharray="5 5" strokeWidth="1"/>
+        {/* axes labels & ticks */}
+        {xticks.map(v => <text key={"tx"+v} x={X(v)} y={H-M.b+16} fill="#bfbfbf" fontSize="11" textAnchor="middle">{v.toFixed(2)}</text>)}
+        {yticks.map(v => <text key={"ty"+v} x={M.l-8} y={Y(v)+4} fill="#bfbfbf" fontSize="11" textAnchor="end">{v.toFixed(2)}</text>)}
+        <text x={M.l+pw/2} y={H-8} fill="#dcdcdc" fontSize="12" textAnchor="middle">JdK RS-Ratio</text>
+        <text transform={`translate(14 ${M.t+ph/2}) rotate(-90)`} fill="#dcdcdc" fontSize="12" textAnchor="middle">JdK RS-Momentum</text>
+        {/* trails + heads */}
+        {assets.map(a => {
+          const t = trails?.[a.name];
+          const path = t ? t.points.slice(-range) : [[a.x, a.y]];
+          const col = colors[a.name];
+          const head = path[path.length-1];
+          const hl = hover && hover.a.name === a.name;
+          return (
+            <g key={a.name} opacity={hover && !hl ? 0.35 : 1}>
+              {showTrail && path.length > 1 && (
+                <polyline points={path.map(p => `${X(p[0])},${Y(p[1])}`).join(" ")}
+                  fill="none" stroke={col} strokeWidth={hl ? 2 : 1.2}/>
+              )}
+              {showTrail && path.slice(0,-1).map((p,i) => {
+                const nx = path[i+1];
+                const ang = Math.atan2(Y(nx[1])-Y(p[1]), X(nx[0])-X(p[0])) * 180/Math.PI;
+                return <path key={i} d="M -4 -2.6 L 2.5 0 L -4 2.6 Z" fill={col}
+                  transform={`translate(${X(p[0])} ${Y(p[1])}) rotate(${ang})`}/>;
+              })}
+              <rect x={X(head[0])-4.5} y={Y(head[1])-4.5} width="9" height="9" fill={col}
+                stroke={hl ? "#fff" : "#000"} strokeWidth={hl ? 1.5 : 0.5}/>
+              <text x={X(head[0])} y={Y(head[1])-9} fill={col} fontSize="11" fontWeight="bold"
+                textAnchor="middle" style={{paintOrder:"stroke", stroke:"#000", strokeWidth:3}}>
+                {labelMode === "Ticker" ? (CODE[a.name] || a.name) : a.name}{a.proxy ? "*" : ""}
+              </text>
+            </g>);
+        })}
+        {/* benchmark marker */}
+        <path d={`M ${cx} ${cy-6} L ${cx+6} ${cy} L ${cx} ${cy+6} L ${cx-6} ${cy} Z`}
+          fill="#f2f2f2" stroke="#000" strokeWidth="1"/>
+      </svg>
+      {hover && (
+        <div className="tip" style={{
+          left: Math.min(hover.mx + 14, dim.w - 190),
+          top: Math.max(hover.my - 64, 4) }}>
+          <b>{CODE[hover.a.name] || hover.a.name}</b> — {hover.a.name}{hover.a.proxy ? " (proxy)" : ""}<br/>
+          <span className="lbl">RS-Ratio</span> {fmt2(hover.x)} &nbsp;
+          <span className="lbl">RS-Mom</span> {fmt2(hover.y)}<br/>
+          {hover.date && <><span className="lbl">Date</span> {hover.date} </>}
+          {hover.head && <span style={{color:"#ffd11a"}}> ● latest · {hover.a.quadrant}</span>}
+        </div>
+      )}
+    </div>
+  );
 }
 
-function renderChart(){
-  Plotly.react("rrgChart", buildTraces(), chartLayout(),
-    { responsive:true, displaylogo:false, modeBarButtonsToRemove:["lasso2d","select2d","autoScale2d"] });
+function ArrowHead({ x, y, qx, qy, size, color }){
+  const ang = Math.atan2(y - qy, x - qx) * 180/Math.PI;
+  return <path d={`M 0 0 L ${-size*0.9} ${-size*0.62} L ${-size*0.9} ${size*0.62} Z`}
+    fill={color} transform={`translate(${x} ${y}) rotate(${ang})`}/>;
 }
 
-/* ---------- quadrant card pills ---------- */
-function renderPills(){
-  for (const q of Object.keys(QUAD)){
-    const box = document.getElementById("pills-" + q);
-    const members = visibleAssets().filter(a => a.quadrant === q);
-    box.innerHTML = members.length
-      ? members.map(a => `
-          <button class="pill ${a.name === state.selected ? "active" : ""}" data-asset="${a.name}">
-            <span class="dot" style="background:${CLASS_COLOR[a.cls]}"></span>${a.name}${a.proxy ? "*" : ""}
-          </button>`).join("")
-      : `<span class="text-xs italic" style="color:var(--ink-3)">None (ไม่มี)</span>`;
-  }
+/* ================= help / methodology modal ================= */
+
+function HelpModal({ onClose, benchmark }){
+  return (
+    <div className="modalback" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <button className="close" onClick={onClose}>ESC × CLOSE</button>
+        <h2>WEEKLY KEYS — METHODOLOGY &amp; CALCULATION</h2>
+        <p><b style={{color:"#33cc55"}}>Data source:</b> real historical closes from Yahoo Finance
+          (<code>yfinance</code>), recomputed by <code>update_rrg_data.py</code> and deployed daily.
+          Nothing on this screen is simulated — every point and trail is calculated from actual prices.</p>
+        <h3>Double-smoothed EMA approximation (vs benchmark {benchmark})</h3>
+        <ol>
+          <li>Relative Strength <code>RS = Asset ÷ Benchmark</code></li>
+          <li><code>EMA1 = EMA(RS, N)</code></li>
+          <li><code>EMA2 = EMA(RS ÷ EMA1, N)</code> → <b>RS-Ratio</b> <code>= EMA2 × 100</code></li>
+          <li><b>RS-Momentum</b> <code>= RS-Ratio ÷ EMA(RS-Ratio, N) × 100</code></li>
+        </ol>
+        <h3>Period</h3>
+        <p><b>Weekly N = 10</b> (standard JdK approximation, Friday closes) · <b>Daily N = 50</b>
+          (≈ 10 trading weeks) — both views cover a comparable ~2.5-month window; Daily reacts faster.</p>
+        <h3>Limitations</h3>
+        <p>The true JdK RS-Ratio/RS-Momentum (RRG Research) is proprietary and adds z-score
+          normalization — absolute values here differ from Bloomberg/StockCharts although the rotation
+          shape is similar. Axes auto-scale. Assets marked <b>*</b> use ETF/futures proxies where Yahoo
+          lacks the primary index. Indicative analysis only — not investment advice.</p>
+        <p style={{marginTop:10, color:"#9a9a9a"}}>การลงทุนมีความเสี่ยง ผู้ลงทุนควรศึกษาข้อมูลและทำความเข้าใจลักษณะสินค้า
+          เงื่อนไขผลตอบแทนและความเสี่ยงอย่างรอบคอบก่อนการลงทุน</p>
+      </div>
+    </div>
+  );
 }
 
-/* ---------- table ---------- */
-function renderTable(){
-  const tbody = document.querySelector("#dataTable tbody");
-  const vis = visibleAssets(), blk = tfCurrent();
-  tbody.innerHTML = vis.map(a => {
-    const qc = QUAD[a.quadrant];
-    return `
-    <tr data-asset="${a.name}" class="${a.name === state.selected ? "selected" : ""}">
-      <td class="px-5 py-2.5 font-semibold whitespace-nowrap">
-        <span class="inline-block w-2 h-2 rounded-full mr-2 align-middle" style="background:${CLASS_COLOR[a.cls]}"></span>${a.name}${a.proxy ? "*" : ""}
-        <span class="text-[10px] font-normal ml-1" style="color:var(--ink-3)">${a.ticker}</span>
-      </td>
-      <td class="px-3 py-2.5" style="color:var(--ink-2)">${a.cls}</td>
-      <td class="px-3 py-2.5 text-right num">${fmt(a.x)}</td>
-      <td class="px-3 py-2.5 text-right num">${fmt(a.y)}</td>
-      <td class="px-3 py-2.5"><span class="qbadge" style="color:${qc.color};background:${qc.color}1f;border:1px solid ${qc.color}55">${a.quadrant}</span></td>
-      <td class="px-3 py-2.5 text-right num font-semibold" style="color:${(a.perf4w ?? 0) >= 0 ? "#4ade80" : "#f87171"}">${fmtPct(a.perf4w)}</td>
-      <td class="px-5 py-2.5" style="color:var(--ink-2)">${qc.advice}</td>
-    </tr>`;
-  }).join("");
-  document.getElementById("rowCount").textContent = `${vis.length} of ${blk.assets.length} assets`;
-  document.getElementById("tableTf").textContent = `${blk.label} · N=${blk.period}`;
-}
+/* ================= main app ================= */
 
-/* ---------- filters / header / banners ---------- */
-function renderFilters(){
-  document.getElementById("classFilters").innerHTML = CLASS_ORDER.map(cls => `
-    <label class="filter-chip ${state.activeClasses.has(cls) ? "on" : ""}" data-cls="${cls}">
-      <input type="checkbox" class="sr-only" ${state.activeClasses.has(cls) ? "checked" : ""}>
-      <span class="dot" style="background:${CLASS_COLOR[cls]}"></span>${cls}
-    </label>`).join("");
-}
-function renderHeader(){
-  const blk = tfCurrent();
-  document.getElementById("benchLabel").textContent = state.current.benchmark;
-  document.getElementById("srcLabel").textContent = state.current.source || "Yahoo Finance";
-  document.getElementById("asOfLabel").textContent = blk.as_of;
-  document.getElementById("genLabel").textContent = state.current.generated_at;
-  document.querySelectorAll(".tf-btn").forEach(b =>
-    b.classList.toggle("on", b.dataset.tf === state.tf));
-  document.querySelectorAll(".tfWord").forEach(el =>
-    el.textContent = state.tf === "W" ? "weekly" : "daily");
-  document.querySelectorAll(".benchWord").forEach(el =>
-    el.textContent = state.current.benchmark);
-  const skipped = blk.skipped || [];
-  const box = document.getElementById("skippedBox");
-  if (skipped.length){
-    box.classList.remove("hidden");
-    box.innerHTML = "⚠ Not shown (no usable Yahoo Finance history): " +
-      skipped.map(s => `<b>${s.name}</b> <span style="color:var(--ink-3)">(${(s.tickers_tried||[]).join(", ")})</span>`).join(" · ");
-  } else box.classList.add("hidden");
-}
+function App(){
+  const { current, trails, error, reload } = useRrgData();
+  const [tf, setTf] = useState("W");
+  const [range, setRange] = useState(5);
+  const [showTrail, setShowTrail] = useState(true);
+  const [labelMode, setLabelMode] = useState("Ticker");
+  const [hidden, setHidden] = useState(new Set());
+  const [hover, setHover] = useState(null);
+  const [help, setHelp] = useState(false);
+  const [cmd, setCmd] = useState("");
 
-/* ---------- selection & render ---------- */
-function selectAsset(name, scrollToRow){
-  state.selected = (state.selected === name) ? null : name;
-  renderAll();
-  if (scrollToRow && state.selected){
-    const row = document.querySelector(`#dataTable tr[data-asset="${CSS.escape(name)}"]`);
-    if (row) row.scrollIntoView({ behavior:"smooth", block:"nearest" });
-  }
-}
-function renderAll(){
-  if (!tfCurrent()) return;
-  renderHeader(); renderChart(); renderPills(); renderTable(); renderFilters();
-}
+  useEffect(() => {
+    const onKey = e => {
+      if (e.key === "F1"){ e.preventDefault(); setHelp(h => !h); }
+      if (e.key === "Escape") setHelp(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
-/* ---------- events ---------- */
-document.querySelectorAll(".tf-btn").forEach(b => b.addEventListener("click", () => {
-  state.tf = b.dataset.tf; state.selected = null; renderAll();
-}));
-document.getElementById("classFilters").addEventListener("click", e => {
-  const chip = e.target.closest(".filter-chip"); if (!chip) return;
-  e.preventDefault();
-  const cls = chip.dataset.cls;
-  state.activeClasses.has(cls) ? state.activeClasses.delete(cls) : state.activeClasses.add(cls);
-  renderAll();
-});
-document.getElementById("searchBox").addEventListener("input", e => { state.search = e.target.value; renderAll(); });
-document.querySelector("#dataTable tbody").addEventListener("click", e => {
-  const row = e.target.closest("tr[data-asset]"); if (row) selectAsset(row.dataset.asset, false);
-});
-document.querySelector("main").addEventListener("click", e => {
-  const pill = e.target.closest(".pill[data-asset]"); if (pill) selectAsset(pill.dataset.asset, true);
-});
-document.getElementById("updateBtn").addEventListener("click", async () => {
-  const btn = document.getElementById("updateBtn");
-  btn.disabled = true; btn.textContent = "⟳ Loading…";
-  try { await loadData(); document.getElementById("errorBox").classList.add("hidden"); renderAll(); }
-  catch (err){ showError(err.message); }
-  finally { btn.disabled = false; btn.textContent = "⟳ Reload Data"; }
-});
-document.getElementById("methodBtn").addEventListener("click", () =>
-  document.getElementById("methodology").scrollIntoView({ behavior:"smooth", block:"start" }));
+  const blk = current?.timeframes?.[tf];
+  const trailBlk = trails?.timeframes?.[tf];
 
-/* ---------- chart click → table highlight ---------- */
-function bindChartClick(){
-  document.getElementById("rrgChart").on("plotly_click", ev => {
-    const p = ev.points && ev.points[0];
-    if (p && p.customdata) selectAsset(p.customdata[0], true);
+  const allAssets = blk ? blk.assets : [];
+  const colors = useMemo(() => {
+    const m = {};
+    allAssets.forEach((a, i) => { m[a.name] = PALETTE[i % PALETTE.length]; });
+    return m;
+  }, [allAssets]);
+  const visible = allAssets.filter(a => !hidden.has(a.name));
+
+  const toggle = name => setHidden(s => {
+    const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n;
   });
+  const allShown = hidden.size === 0;
+  const toggleAll = () => setHidden(allShown ? new Set(allAssets.map(a => a.name)) : new Set());
+
+  const runCmd = e => {
+    if (e.key !== "Enter") return;
+    const c = cmd.trim().toUpperCase();
+    if (c === "HELP" || c === "F1") setHelp(true);
+    else if (c === "W" || c === "WEEKLY") setTf("W");
+    else if (c === "D" || c === "DAILY") setTf("D");
+    setCmd("");
+  };
+
+  return (
+    <React.Fragment>
+      {/* toolbar */}
+      <div className="toolbar">
+        {TOOLBAR.map((b,i) =>
+          <button key={i} className="tbtn"
+            onClick={() => { if (b==="HELP"||b==="F1") setHelp(true); if (b==="PRINT") window.print(); if (b==="GO") reload(); }}>
+            {b}
+          </button>)}
+        <span className="spacer"/><span className="wrench">🔧</span>
+      </div>
+
+      {/* breadcrumb */}
+      <div className="crumb">
+        <span className="nav">‹ ›</span>
+        <b>WEEKLY KEYS Index</b> <span className="nav">▾</span>
+        <span className="sep">|</span> <span>RRG</span> <span className="nav">▾</span>
+        <span className="sep">|</span> <span style={{color:"#bbb"}}>Related Functions Menu</span> <span className="nav">⌄</span>
+        <span className="right"><span>✉ Message</span><span>⧉</span><span>?</span></span>
+      </div>
+
+      {/* command line */}
+      <div className="cmdline">
+        <input value={cmd} onChange={e => setCmd(e.target.value)} onKeyDown={runCmd}
+          placeholder="" spellCheck="false" aria-label="command line"/>
+      </div>
+
+      {/* red bar */}
+      <div className="redbar">
+        <div className="fkey" onClick={() => setShowTrail(s => !s)}>
+          <span className="knum">1)</span> {showTrail ? "Hide" : "Show"} Trail
+        </div>
+        <div className="fkey" onClick={reload}><span className="knum">2)</span> Refresh Data</div>
+        <div className="title">⧉ Relative Rotation Graph</div>
+      </div>
+
+      {/* controls */}
+      <div className="controls">
+        <div className="ctl"><label>Source</label><span className="static">Global Assets</span></div>
+        <div className="ctl"><label>Location</label><span className="static">All Regions</span></div>
+        <div className="ctl"><label>Base</label>
+          <span className="static">{current ? current.benchmark : "—"} Index</span></div>
+        <div className="ctl"><label>◉ As of</label>
+          <span className="static">{blk ? blk.as_of : "—"}</span></div>
+        <div className="ctl"><label>Range</label>
+          <input type="number" min="2" max="10" value={range}
+            onChange={e => setRange(Math.max(2, Math.min(10, +e.target.value || 5)))}/></div>
+        <div className="ctl"><label>Period</label>
+          <select value={tf} onChange={e => setTf(e.target.value)}>
+            <option value="W">Weekly</option><option value="D">Daily</option>
+          </select></div>
+        <div className="ctl"><label>Show</label>
+          <select value={labelMode} onChange={e => setLabelMode(e.target.value)}>
+            <option>Ticker</option><option>Name</option>
+          </select></div>
+        <div className="ctl"><label>Trail</label>
+          <input type="checkbox" className="chk" checked={showTrail}
+            onChange={e => setShowTrail(e.target.checked)}/></div>
+      </div>
+
+      {error && (
+        <div className="errbox">
+          <b>DATA LOAD ERROR:</b> {error}<br/>
+          Run <code>python update_rrg_data.py</code> to generate the JSON files, and open this page
+          over HTTP (<code>python -m http.server 8123</code>) — <code>fetch()</code> cannot read local
+          files via <code>file://</code>.
+        </div>
+      )}
+
+      {/* main area */}
+      <div className="main">
+        <div className="chartwrap">
+          <div className="tabstrip"><div>Zoom</div><div>Track</div><div>Copy</div></div>
+          {blk && <RrgChart assets={visible} trails={trailBlk?.assets} range={range}
+            showTrail={showTrail} labelMode={labelMode} colors={colors}
+            onHover={setHover} hover={hover}/>}
+        </div>
+        <div className="rpanel">
+          <div className="phead"><span>Chart Interpretation</span><span>»</span></div>
+          <div className="subhead">
+            <span>{allAssets.length} Group Constituents</span><span>▴</span>
+          </div>
+          <div className="ctable">
+            <table>
+              <thead><tr><th>Ticker</th><th>Name</th><th style={{width:38}}>Show</th></tr></thead>
+              <tbody>
+                <tr className="showall" onClick={toggleAll}>
+                  <td colSpan="2">Show All</td>
+                  <td><input type="checkbox" className="chk" readOnly checked={allShown}/></td>
+                </tr>
+                {allAssets.map(a => (
+                  <tr key={a.name} className={hidden.has(a.name) ? "dim" : ""}
+                      onClick={() => toggle(a.name)}>
+                    <td className="tick" style={{color:colors[a.name]}}>{CODE[a.name] || a.name}{a.proxy ? "*" : ""}</td>
+                    <td>{a.name.toUpperCase()} <span style={{color:"#7a6210"}}>{a.quadrant.toUpperCase()}</span></td>
+                    <td><input type="checkbox" className="chk" readOnly checked={!hidden.has(a.name)}/></td>
+                  </tr>))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* status bar */}
+      <div className="statusbar">
+        <span className="live">● LIVE — Yahoo Finance ({current ? current.source : "…"})</span>
+        <span>Benchmark {current?.benchmark}</span>
+        <span>{blk ? `${blk.label} N=${blk.period}` : ""}</span>
+        <span>As of {blk?.as_of}</span>
+        <span>Generated {current?.generated_at}</span>
+        {blk?.skipped?.length > 0 &&
+          <span className="warn">⚠ no data: {blk.skipped.map(s => s.name).join(", ")}</span>}
+        <span style={{marginLeft:"auto"}}>* = ETF/futures proxy · F1 = methodology</span>
+      </div>
+
+      {help && <HelpModal onClose={() => setHelp(false)} benchmark={current?.benchmark || "^GSPC"}/>}
+    </React.Fragment>
+  );
 }
 
-/* ---------- boot ---------- */
-(async () => {
-  try {
-    await loadData();
-    renderAll();
-    bindChartClick();
-  } catch (err){ showError(err.message); }
-})();
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+<script>
+  // Deterministic bootstrap: compile the JSX source above with Babel and run it.
+  // (babel-standalone's automatic text/babel processing does not fire reliably
+  //  in every embedding, so we transform explicitly.)
+  (function boot(){
+    if (!window.Babel || !window.React || !window.ReactDOM){ setTimeout(boot, 40); return; }
+    try {
+      var src = document.getElementById("app-src").textContent;
+      var code = Babel.transform(src, {
+        presets: [["react", { runtime: "classic", pragma: "React.createElement", pragmaFrag: "React.Fragment" }]]
+      }).code;
+      (0, eval)(code);
+    } catch (e){
+      console.error("App bootstrap failed:", e);
+      document.getElementById("root").innerHTML =
+        '<div style="color:#ff9090;padding:20px;font-family:monospace">BOOT ERROR: ' + e.message + '</div>';
+    }
+  })();
 </script>
 </body>
 </html>

@@ -108,7 +108,7 @@ Trail `points` are oldest → newest so the chart can draw the real rotation pat
 
 | File | Purpose |
 |---|---|
-| `index.html` | Dashboard (Tailwind + Plotly CDN) — Weekly/Daily switch, trails, methodology |
+| `index.html` | Dashboard — Bloomberg-terminal-style UI (React 18 UMD + Babel standalone + hand-drawn SVG), Weekly/Daily switch, real trails, constituents panel, F1 methodology |
 | `update_rrg_data.py` | Yahoo Finance download + JdK approximation (full methodology in docstring) |
 | `rrg_current.json` | Latest RS-Ratio / RS-Momentum / quadrant per asset × timeframe |
 | `rrg_trails.json` | 10-point historical path per asset × timeframe |
