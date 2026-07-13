@@ -37,6 +37,9 @@ mkdir "%TEMP%\wk_site"
 copy /y index.html "%TEMP%\wk_site\" >nul
 copy /y rrg_current.json "%TEMP%\wk_site\" >nul
 copy /y rrg_trails.json "%TEMP%\wk_site\" >nul
+rem _worker.js = edge function that computes fresh data on Cloudflare itself;
+rem it MUST be included or a deploy would remove the auto-update capability
+copy /y _worker.js "%TEMP%\wk_site\" >nul
 rem wrangler's exit code is unreliable on Windows - check its output instead
 call npx --yes wrangler@3 pages deploy "%TEMP%\wk_site" --project-name weekly-keys-rrg --branch main --commit-dirty=true > "%TEMP%\wk_deploy.log" 2>&1
 type "%TEMP%\wk_deploy.log" >> rrg_update.log
