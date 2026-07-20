@@ -33,7 +33,10 @@
   *{box-sizing:border-box; margin:0; padding:0}
   html,body{background:var(--bg); color:var(--white);
     font-family:Arial, Helvetica, sans-serif; font-size:13px; height:100%}
-  #root{min-height:100vh; display:flex; flex-direction:column}
+  #root{min-height:100vh; display:flex; flex-direction:column; align-items:center}
+  /* centered terminal frame */
+  .frame{width:100%; max-width:1560px; margin:0 auto; display:flex; flex-direction:column;
+    flex:1; min-height:0; border-left:1px solid #161616; border-right:1px solid #161616}
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-thumb{background:#333}
   ::-webkit-scrollbar-track{background:#0a0a0a}
@@ -89,9 +92,12 @@
   /* ---- main split ---- */
   .main{display:flex; flex:1; min-height:0}
   .chartwrap{flex:1; min-width:0; display:flex; flex-direction:column; padding:2px 0 4px 4px}
-  .tabstrip{display:flex; color:#bbb; font-size:12px; border-bottom:1px solid #222}
-  .tabstrip div{padding:3px 30px; border-right:1px solid #222; cursor:default}
-  .chartbox{flex:1; min-height:420px; position:relative}
+  .tabstrip{display:flex; color:#bbb; font-size:12px; border-bottom:1px solid #222; align-items:center}
+  .tabstrip .tsbtn{padding:3px 22px; border-right:1px solid #222; cursor:pointer; user-select:none}
+  .tabstrip .tsbtn:hover{background:#1c1c1c; color:#fff}
+  .tabstrip .hint{margin-left:auto; padding:3px 10px; color:#555; font-size:11px}
+  .chartbox{flex:1; min-height:420px; position:relative; cursor:grab}
+  .chartbox.panning{cursor:grabbing}
   .chartbox svg{display:block; width:100%; height:100%}
 
   /* ---- right panel ---- */
@@ -206,6 +212,10 @@ const fmt2 = n => n.toFixed(2);
 function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover, hover }){
   const wrapRef = useRef(null);
   const [dim, setDim] = useState({ w:900, h:560 });
+  const [view, setView] = useState(null);          // null = auto-fit (centered); else {xlo,xhi,ylo,yhi}
+  const [panning, setPanning] = useState(false);
+  const geomRef = useRef(null);                    // latest geometry for wheel/drag handlers
+  const dragRef = useRef(null);
   useEffect(() => {
     const el = wrapRef.current; if (!el) return;
     const ro = new ResizeObserver(() => setDim({ w:el.clientWidth, h:el.clientHeight }));
@@ -216,19 +226,73 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
   const W = Math.max(dim.w, 480), H = Math.max(dim.h, 380);
   const pw = W - M.l - M.r, ph = H - M.t - M.b;
 
-  // gather every visible coordinate (heads + shown trail slice), pad, include 100
+  // auto-fit domain: every visible coordinate (heads + shown trail slice), padded, incl. 100
   const pts = [[100,100]];
   for (const a of assets){
     const t = trails?.[a.name];
     const path = t ? t.points.slice(-range) : [[a.x, a.y]];
     (showTrail ? path : path.slice(-1)).forEach(p => pts.push(p));
   }
-  let xlo = Math.min(...pts.map(p=>p[0])), xhi = Math.max(...pts.map(p=>p[0]));
-  let ylo = Math.min(...pts.map(p=>p[1])), yhi = Math.max(...pts.map(p=>p[1]));
-  const padx = Math.max((xhi-xlo)*.07, .5), pady = Math.max((yhi-ylo)*.10, .4);
-  xlo -= padx; xhi += padx; ylo -= pady; yhi += pady;
+  let axlo = Math.min(...pts.map(p=>p[0])), axhi = Math.max(...pts.map(p=>p[0]));
+  let aylo = Math.min(...pts.map(p=>p[1])), ayhi = Math.max(...pts.map(p=>p[1]));
+  const padx = Math.max((axhi-axlo)*.07, .5), pady = Math.max((ayhi-aylo)*.10, .4);
+  const auto = { xlo:axlo-padx, xhi:axhi+padx, ylo:aylo-pady, yhi:ayhi+pady };
+  const dom = view || auto;
+  const { xlo, xhi, ylo, yhi } = dom;
   const X = v => M.l + (v - xlo)/(xhi - xlo)*pw;
   const Y = v => M.t + (yhi - v)/(yhi - ylo)*ph;
+  geomRef.current = { dom, l:M.l, t:M.t, pw, ph };
+
+  /* ---- zoom / pan / reset ---- */
+  const zoomBy = (f, anchor) => {
+    const d = geomRef.current.dom;
+    const ax = anchor ? anchor.x : (d.xlo + d.xhi)/2;
+    const ay = anchor ? anchor.y : (d.ylo + d.yhi)/2;
+    const span = (d.xhi - d.xlo) * f;
+    if (span < 0.2 || span > 200) return;          // zoom limits
+    setView({
+      xlo: ax - (ax - d.xlo)*f, xhi: ax + (d.xhi - ax)*f,
+      ylo: ay - (ay - d.ylo)*f, yhi: ay + (d.yhi - ay)*f,
+    });
+  };
+  const resetView = () => setView(null);
+  useEffect(() => {                                 // wheel zoom anchored at the cursor
+    const el = wrapRef.current; if (!el) return;
+    const onWheel = e => {
+      e.preventDefault();
+      const g = geomRef.current, r = el.getBoundingClientRect();
+      const px = e.clientX - r.left, py = e.clientY - r.top;
+      const ax = g.dom.xlo + (px - g.l)/g.pw * (g.dom.xhi - g.dom.xlo);
+      const ay = g.dom.yhi - (py - g.t)/g.ph * (g.dom.yhi - g.dom.ylo);
+      zoomBy(e.deltaY > 0 ? 1.18 : 1/1.18, { x:ax, y:ay });
+    };
+    el.addEventListener("wheel", onWheel, { passive:false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+  const onMouseDown = e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    dragRef.current = { mx:e.clientX, my:e.clientY, dom:{ ...geomRef.current.dom }, moved:false };
+    setPanning(true);
+    const move = ev => {
+      const d = dragRef.current; if (!d) return;
+      const g = geomRef.current;
+      const dx = (ev.clientX - d.mx)/g.pw * (d.dom.xhi - d.dom.xlo);
+      const dy = (ev.clientY - d.my)/g.ph * (d.dom.yhi - d.dom.ylo);
+      if (Math.abs(ev.clientX - d.mx) + Math.abs(ev.clientY - d.my) > 3) d.moved = true;
+      if (d.moved){
+        onHover(null);
+        setView({ xlo:d.dom.xlo - dx, xhi:d.dom.xhi - dx, ylo:d.dom.ylo + dy, yhi:d.dom.yhi + dy });
+      }
+    };
+    const up = () => {
+      dragRef.current = null; setPanning(false);
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
 
   const cx = X(100), cy = Y(100);
 
@@ -266,6 +330,7 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
       date:shownDates[i], head:i === shown.length-1 }));
   }
   const onMove = e => {
+    if (dragRef.current && dragRef.current.moved) return;   // no tooltips while panning
     const r = wrapRef.current.getBoundingClientRect();
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     let best = null, bd = 14*14;
@@ -277,7 +342,16 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
   };
 
   return (
-    <div className="chartbox" ref={wrapRef} onMouseMove={onMove} onMouseLeave={() => onHover(null)}>
+    <React.Fragment>
+    <div className="tabstrip">
+      <div className="tsbtn" onClick={() => zoomBy(1/1.3)}>＋ Zoom In</div>
+      <div className="tsbtn" onClick={() => zoomBy(1.3)}>－ Zoom Out</div>
+      <div className="tsbtn" onClick={resetView} style={view ? { color:"#ffd11a" } : null}>⟲ Reset Center</div>
+      <div className="hint">drag = pan · scroll = zoom · double-click = reset</div>
+    </div>
+    <div className={"chartbox" + (panning ? " panning" : "")} ref={wrapRef}
+      onMouseMove={onMove} onMouseLeave={() => onHover(null)}
+      onMouseDown={onMouseDown} onDoubleClick={resetView}>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
         {/* plot frame */}
         <rect x={M.l} y={M.t} width={pw} height={ph} fill="#050505" stroke="#3a3a3a"/>
@@ -341,6 +415,7 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
         </div>
       )}
     </div>
+    </React.Fragment>
   );
 }
 
@@ -432,7 +507,7 @@ function App(){
   };
 
   return (
-    <React.Fragment>
+    <div className="frame">
       {/* toolbar */}
       <div className="toolbar">
         {TOOLBAR.map((b,i) =>
@@ -503,7 +578,6 @@ function App(){
       {/* main area */}
       <div className="main">
         <div className="chartwrap">
-          <div className="tabstrip"><div>Zoom</div><div>Track</div><div>Copy</div></div>
           {blk && <RrgChart assets={visible} trails={trailBlk?.assets} range={range}
             showTrail={showTrail} labelMode={labelMode} colors={colors}
             onHover={setHover} hover={hover}/>}
@@ -547,7 +621,7 @@ function App(){
       </div>
 
       {help && <HelpModal onClose={() => setHelp(false)} benchmark={current?.benchmark || "^GSPC"}/>}
-    </React.Fragment>
+    </div>
   );
 }
 
