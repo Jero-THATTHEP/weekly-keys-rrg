@@ -232,22 +232,23 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
 
   const cx = X(100), cy = Y(100);
 
-  // rotation arrows (clockwise flow), drawn as thick translucent arcs
+  // rotation arrows (clockwise flow) — four short, thin translucent arcs
+  // arranged as a ring with corner gaps so they never overlap each other
+  // or crowd the centre of the chart
   const arrows = [];
   {
-    const aw = Math.min(pw, ph) * 0.16;                       // arrow thickness
-    const rx = pw*0.28, ry = ph*0.30;                         // arc radii
+    const aw = Math.min(pw, ph) * 0.085;                      // arrow thickness (kept slim)
+    const rx = pw*0.30, ry = ph*0.32;                         // arc radii
     const mk = (x1,y1,qx,qy,x2,y2,color,id) => (
-      <g key={id} opacity="0.30">
+      <g key={id} opacity="0.22">
         <path d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`} stroke={color}
           strokeWidth={aw} fill="none" strokeLinecap="butt"/>
-        <path d={`M ${x2} ${y2} Q ${qx} ${qy} ${x1} ${y1}`} stroke="none" fill="none"/>
-        <ArrowHead x={x2} y={y2} qx={qx} qy={qy} size={aw*0.95} color={color}/>
+        <ArrowHead x={x2} y={y2} qx={qx} qy={qy} size={aw*1.05} color={color}/>
       </g>);
-    arrows.push(mk(cx - rx*0.9, cy - ry*0.55, cx - rx*0.2, cy - ry*1.15, cx + rx*0.75, cy - ry*0.75, "#1e7a1e", "arrN")); // top: improving→leading
-    arrows.push(mk(cx + rx*0.75, cy - ry*0.55, cx + rx*1.15, cy + ry*0.10, cx + rx*0.70, cy + ry*0.80, "#8a7500", "arrE")); // right: →weakening
-    arrows.push(mk(cx + rx*0.85, cy + ry*0.70, cx + rx*0.15, cy + ry*1.20, cx - rx*0.70, cy + ry*0.75, "#6e2410", "arrS")); // bottom: →lagging
-    arrows.push(mk(cx - rx*0.80, cy + ry*0.60, cx - rx*1.15, cy - ry*0.05, cx - rx*0.70, cy - ry*0.70, "#1c4e6e", "arrW")); // left: →improving
+    arrows.push(mk(cx - rx*0.55, cy - ry*0.75, cx,           cy - ry*1.12, cx + rx*0.55, cy - ry*0.75, "#1e7a1e", "arrN")); // top: improving→leading
+    arrows.push(mk(cx + rx*0.78, cy - ry*0.45, cx + rx*1.10, cy,           cx + rx*0.78, cy + ry*0.45, "#8a7500", "arrE")); // right: →weakening
+    arrows.push(mk(cx + rx*0.55, cy + ry*0.75, cx,           cy + ry*1.12, cx - rx*0.55, cy + ry*0.75, "#6e2410", "arrS")); // bottom: →lagging
+    arrows.push(mk(cx - rx*0.78, cy + ry*0.45, cx - rx*1.10, cy,           cx - rx*0.78, cy - ry*0.45, "#1c4e6e", "arrW")); // left: →improving
   }
 
   const xticks = niceTicks(xlo, xhi), yticks = niceTicks(ylo, yhi);

@@ -3,8 +3,8 @@
  * WEEKLY KEYS — Cloudflare Pages Function (advanced mode _worker.js)
  * ============================================================================
  * Serves /rrg_current.json and /rrg_trails.json with FRESH data computed on
- * the edge from Yahoo Finance, cached for 6 hours — so the dashboard stays
- * up to date every day even when the local PC is off.
+ * the edge from Yahoo Finance, refreshed once per day at 08:00 Asia/Bangkok
+ * (UTC+7) — so the dashboard stays up to date even when the local PC is off.
  *
  * - Same double-smoothed-EMA JdK approximation as update_rrg_data.py
  *   (RS = asset/bench; EMA1 = EMA(RS,N); EMA2 = EMA(RS/EMA1,N)*100 = RS-Ratio;
@@ -44,8 +44,21 @@ const ASSETS = [
 ];
 const TIMEFRAMES = { W:{label:"Weekly",period:10,perfBars:4}, D:{label:"Daily",period:50,perfBars:20} };
 const TRAIL_LEN = 10;
-const CACHE_SECONDS = 6 * 3600;      // recompute at most every 6 hours
 const RANGE = "2y";                  // enough history for N=50 double smoothing
+
+// Daily refresh anchored at 08:00 Asia/Bangkok (UTC+7): the cache "day"
+// rolls over at 08:00 +07, so the first visitor after 8am each morning
+// triggers a fresh computation and everyone else gets that day's data.
+const REFRESH_HOUR_UTC7 = 8;
+function dayBucket(){
+  // shift clock back by the refresh hour so the date flips at 08:00 +07
+  return new Date(Date.now() + (7 - REFRESH_HOUR_UTC7) * 3600e3).toISOString().slice(0, 10);
+}
+function secondsUntilNextRefresh(){
+  const next = new Date(dayBucket() + "T00:00:00Z").getTime()
+             + 24 * 3600e3 - (7 - REFRESH_HOUR_UTC7) * 3600e3;
+  return Math.max(60, Math.floor((next - Date.now()) / 1000));
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -71,21 +84,23 @@ function withHeader(res, k, v){
 
 async function serveRrg(pathname, request, env, ctx){
   const cache = caches.default;
-  const key = new Request("https://rrg-cache.internal" + pathname);
-  const hit = await cache.match(key);
-  if (hit) return withHeader(hit, "x-rrg-source", "edge-cache");
+  const day = dayBucket();
+  const keyFor = p => new Request(`https://rrg-cache.internal${p}?d=${day}`);
+  const hit = await cache.match(keyFor(pathname));
+  if (hit) return withHeader(hit, "x-rrg-source", "edge-cache d=" + day);
 
   const { current, trails } = await computeAll();
+  const ttl = secondsUntilNextRefresh();
   const mk = obj => new Response(JSON.stringify(obj), {
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": `public, s-maxage=${CACHE_SECONDS}`,
-      "x-rrg-source": "computed-live",
+      "cache-control": `public, s-maxage=${ttl}`,
+      "x-rrg-source": "computed-live d=" + day,
     },
   });
   const curRes = mk(current), trlRes = mk(trails);
-  ctx.waitUntil(cache.put(new Request("https://rrg-cache.internal/rrg_current.json"), curRes.clone()));
-  ctx.waitUntil(cache.put(new Request("https://rrg-cache.internal/rrg_trails.json"), trlRes.clone()));
+  ctx.waitUntil(cache.put(keyFor("/rrg_current.json"), curRes.clone()));
+  ctx.waitUntil(cache.put(keyFor("/rrg_trails.json"), trlRes.clone()));
   return pathname === "/rrg_current.json" ? curRes : trlRes;
 }
 
