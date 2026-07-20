@@ -1,12 +1,12 @@
 {
  "benchmark": "^GSPC",
- "generated_at": "2026-07-18 18:00 +07",
+ "generated_at": "2026-07-20 14:51 +07",
  "source": "Yahoo Finance (yfinance)",
  "timeframes": {
   "W": {
    "label": "Weekly",
    "period": 10,
-   "as_of": "2026-07-17",
+   "as_of": "2026-07-24",
    "assets": [
     {
      "name": "S&P 500",
@@ -23,190 +23,190 @@
      "ticker": "^IXIC",
      "cls": "Developed",
      "proxy": false,
-     "x": 100.161,
-     "y": 99.392,
-     "quadrant": "Weakening",
-     "perf4w": -3.19
+     "x": 99.951,
+     "y": 99.33,
+     "quadrant": "Lagging",
+     "perf4w": -0.53
     },
     {
      "name": "Euro Stoxx 50",
      "ticker": "^STOXX50E",
      "cls": "Developed",
      "proxy": false,
-     "x": 100.125,
-     "y": 100.66,
+     "x": 100.167,
+     "y": 100.574,
      "quadrant": "Leading",
-     "perf4w": -0.42
+     "perf4w": -1.08
     },
     {
      "name": "Nikkei 225",
      "ticker": "^N225",
      "cls": "Developed",
      "proxy": false,
-     "x": 102.541,
-     "y": 99.256,
+     "x": 101.579,
+     "y": 98.625,
      "quadrant": "Weakening",
-     "perf4w": -9.41
+     "perf4w": -8.94
     },
     {
      "name": "KOSPI",
      "ticker": "^KS11",
      "cls": "Developed",
      "proxy": false,
-     "x": 103.038,
-     "y": 95.394,
+     "x": 100.2,
+     "y": 94.002,
      "quadrant": "Weakening",
-     "perf4w": -24.08
+     "perf4w": -23.94
     },
     {
      "name": "Hang Seng",
      "ticker": "^HSI",
      "cls": "Developed",
      "proxy": false,
-     "x": 95.671,
-     "y": 99.847,
-     "quadrant": "Lagging",
-     "perf4w": 3.24
+     "x": 96.745,
+     "y": 100.79,
+     "quadrant": "Improving",
+     "perf4w": 9.34
     },
     {
      "name": "TAIEX",
      "ticker": "^TWII",
      "cls": "Emerging",
      "proxy": false,
-     "x": 103.982,
-     "y": 98.476,
+     "x": 102.811,
+     "y": 97.835,
      "quadrant": "Weakening",
-     "perf4w": -7.59
+     "perf4w": -6.17
     },
     {
      "name": "SET Index",
      "ticker": "^SET.BK",
      "cls": "Emerging",
      "proxy": false,
-     "x": 101.125,
-     "y": 100.185,
+     "x": 101.571,
+     "y": 100.488,
      "quadrant": "Leading",
-     "perf4w": 3.69
+     "perf4w": 5.15
     },
     {
      "name": "Shanghai Composite",
      "ticker": "000001.SS",
      "cls": "Emerging",
      "proxy": false,
-     "x": 96.718,
-     "y": 99.024,
+     "x": 96.46,
+     "y": 98.983,
      "quadrant": "Lagging",
-     "perf4w": -7.41
+     "perf4w": -7.15
     },
     {
      "name": "BSE Sensex",
      "ticker": "^BSESN",
      "cls": "Emerging",
      "proxy": false,
-     "x": 98.18,
-     "y": 101.368,
+     "x": 98.508,
+     "y": 101.392,
      "quadrant": "Improving",
-     "perf4w": 2.33
+     "perf4w": -0.85
     },
     {
      "name": "VN-Index",
      "ticker": "VNM",
      "cls": "Emerging",
      "proxy": true,
-     "x": 96.848,
-     "y": 99.124,
+     "x": 96.638,
+     "y": 99.106,
      "quadrant": "Lagging",
-     "perf4w": -4.93
+     "perf4w": -6.97
     },
     {
      "name": "DXY",
      "ticker": "DX-Y.NYB",
      "cls": "FX",
      "proxy": false,
-     "x": 98.643,
-     "y": 100.441,
+     "x": 98.836,
+     "y": 100.521,
      "quadrant": "Improving",
-     "perf4w": 0.47
+     "perf4w": -2.1
     },
     {
      "name": "Gold",
      "ticker": "GC=F",
      "cls": "Commodities",
      "proxy": false,
-     "x": 93.383,
-     "y": 98.362,
+     "x": 93.665,
+     "y": 98.899,
      "quadrant": "Lagging",
-     "perf4w": -4.43
+     "perf4w": -2.76
     },
     {
      "name": "Silver",
      "ticker": "SI=F",
      "cls": "Commodities",
      "proxy": false,
-     "x": 89.34,
-     "y": 95.336,
+     "x": 89.36,
+     "y": 96.169,
      "quadrant": "Lagging",
-     "perf4w": -14.85
+     "perf4w": -4.74
     },
     {
      "name": "WTI Crude",
      "ticker": "CL=F",
      "cls": "Commodities",
      "proxy": false,
-     "x": 92.544,
-     "y": 95.153,
+     "x": 94.114,
+     "y": 97.339,
      "quadrant": "Lagging",
-     "perf4w": 8.26
+     "perf4w": 17.89
     },
     {
      "name": "Brent Crude",
      "ticker": "BZ=F",
      "cls": "Commodities",
      "proxy": false,
-     "x": 92.554,
-     "y": 95.563,
+     "x": 94.504,
+     "y": 98.008,
      "quadrant": "Lagging",
-     "perf4w": 10.9
+     "perf4w": 22.51
     },
     {
      "name": "BTC",
      "ticker": "BTC-USD",
      "cls": "Crypto",
      "proxy": false,
-     "x": 92.453,
-     "y": 99.621,
-     "quadrant": "Lagging",
-     "perf4w": 1.14
+     "x": 93.276,
+     "y": 100.415,
+     "quadrant": "Improving",
+     "perf4w": 5.46
     },
     {
      "name": "ETH",
      "ticker": "ETH-USD",
      "cls": "Crypto",
      "proxy": false,
-     "x": 90.678,
-     "y": 101.344,
+     "x": 92.352,
+     "y": 102.615,
      "quadrant": "Improving",
-     "perf4w": 8.17
+     "perf4w": 16.62
     },
     {
      "name": "SOL",
      "ticker": "SOL-USD",
      "cls": "Crypto",
      "proxy": false,
-     "x": 92.707,
-     "y": 103.123,
+     "x": 93.632,
+     "y": 103.371,
      "quadrant": "Improving",
-     "perf4w": 8.16
+     "perf4w": 4.39
     },
     {
      "name": "XRP",
      "ticker": "XRP-USD",
      "cls": "Crypto",
      "proxy": false,
-     "x": 89.068,
-     "y": 100.036,
+     "x": 89.794,
+     "y": 100.695,
      "quadrant": "Improving",
-     "perf4w": -3.63
+     "perf4w": 2.5
     }
    ],
    "skipped": [
@@ -222,7 +222,7 @@
   "D": {
    "label": "Daily",
    "period": 50,
-   "as_of": "2026-07-17",
+   "as_of": "2026-07-20",
    "assets": [
     {
      "name": "S&P 500",
@@ -239,190 +239,190 @@
      "ticker": "^IXIC",
      "cls": "Developed",
      "proxy": false,
-     "x": 100.339,
-     "y": 99.376,
+     "x": 100.272,
+     "y": 99.336,
      "quadrant": "Weakening",
-     "perf4w": -3.19
+     "perf4w": -2.27
     },
     {
      "name": "Euro Stoxx 50",
      "ticker": "^STOXX50E",
      "cls": "Developed",
      "proxy": false,
-     "x": 100.115,
-     "y": 100.842,
+     "x": 100.135,
+     "y": 100.828,
      "quadrant": "Leading",
-     "perf4w": -0.42
+     "perf4w": -0.89
     },
     {
      "name": "Nikkei 225",
      "ticker": "^N225",
      "cls": "Developed",
      "proxy": false,
-     "x": 103.561,
-     "y": 99.739,
+     "x": 103.284,
+     "y": 99.493,
      "quadrant": "Weakening",
-     "perf4w": -9.41
+     "perf4w": -11.15
     },
     {
      "name": "KOSPI",
      "ticker": "^KS11",
      "cls": "Developed",
      "proxy": false,
-     "x": 104.032,
-     "y": 94.884,
+     "x": 103.302,
+     "y": 94.432,
      "quadrant": "Weakening",
-     "perf4w": -24.08
+     "perf4w": -28.3
     },
     {
      "name": "Hang Seng",
      "ticker": "^HSI",
      "cls": "Developed",
      "proxy": false,
-     "x": 95.032,
-     "y": 99.451,
+     "x": 95.295,
+     "y": 99.737,
      "quadrant": "Lagging",
-     "perf4w": 3.24
+     "perf4w": 5.84
     },
     {
      "name": "TAIEX",
      "ticker": "^TWII",
      "cls": "Emerging",
      "proxy": false,
-     "x": 105.381,
-     "y": 98.857,
+     "x": 105.026,
+     "y": 98.581,
      "quadrant": "Weakening",
-     "perf4w": -7.59
+     "perf4w": -10.88
     },
     {
      "name": "SET Index",
      "ticker": "^SET.BK",
      "cls": "Emerging",
      "proxy": false,
-     "x": 101.043,
-     "y": 100.032,
+     "x": 101.255,
+     "y": 100.223,
      "quadrant": "Leading",
-     "perf4w": 3.69
+     "perf4w": 4.61
     },
     {
      "name": "Shanghai Composite",
      "ticker": "000001.SS",
      "cls": "Emerging",
      "proxy": false,
-     "x": 96.899,
-     "y": 99.097,
+     "x": 96.773,
+     "y": 99.008,
      "quadrant": "Lagging",
-     "perf4w": -7.41
+     "perf4w": -8.61
     },
     {
      "name": "BSE Sensex",
      "ticker": "^BSESN",
      "cls": "Emerging",
      "proxy": false,
-     "x": 97.591,
-     "y": 101.345,
+     "x": 97.699,
+     "y": 101.399,
      "quadrant": "Improving",
-     "perf4w": 2.33
+     "perf4w": 0.77
     },
     {
      "name": "VN-Index",
      "ticker": "VNM",
      "cls": "Emerging",
      "proxy": true,
-     "x": 96.629,
-     "y": 98.974,
+     "x": 96.558,
+     "y": 98.944,
      "quadrant": "Lagging",
-     "perf4w": -4.93
+     "perf4w": -6.82
     },
     {
      "name": "DXY",
      "ticker": "DX-Y.NYB",
      "cls": "FX",
      "proxy": false,
-     "x": 98.456,
-     "y": 100.423,
+     "x": 98.506,
+     "y": 100.456,
      "quadrant": "Improving",
-     "perf4w": 0.47
+     "perf4w": -0.16
     },
     {
      "name": "Gold",
      "ticker": "GC=F",
      "cls": "Commodities",
      "proxy": false,
-     "x": 92.73,
-     "y": 97.866,
+     "x": 92.779,
+     "y": 97.997,
      "quadrant": "Lagging",
-     "perf4w": -4.43
+     "perf4w": -3.59
     },
     {
      "name": "Silver",
      "ticker": "SI=F",
      "cls": "Commodities",
      "proxy": false,
-     "x": 88.531,
-     "y": 94.394,
+     "x": 88.47,
+     "y": 94.539,
      "quadrant": "Lagging",
-     "perf4w": -14.85
+     "perf4w": -12.44
     },
     {
      "name": "WTI Crude",
      "ticker": "CL=F",
      "cls": "Commodities",
      "proxy": false,
-     "x": 91.638,
-     "y": 92.948,
+     "x": 92.0,
+     "y": 93.56,
      "quadrant": "Lagging",
-     "perf4w": 8.26
+     "perf4w": 10.59
     },
     {
      "name": "Brent Crude",
      "ticker": "BZ=F",
      "cls": "Commodities",
      "proxy": false,
-     "x": 91.488,
-     "y": 93.339,
+     "x": 91.955,
+     "y": 94.042,
      "quadrant": "Lagging",
-     "perf4w": 10.9
+     "perf4w": 14.72
     },
     {
      "name": "BTC",
      "ticker": "BTC-USD",
      "cls": "Crypto",
      "proxy": false,
-     "x": 91.324,
-     "y": 98.953,
+     "x": 91.516,
+     "y": 99.194,
      "quadrant": "Lagging",
-     "perf4w": 1.14
+     "perf4w": 0.5
     },
     {
      "name": "ETH",
      "ticker": "ETH-USD",
      "cls": "Crypto",
      "proxy": false,
-     "x": 89.163,
-     "y": 100.671,
+     "x": 89.559,
+     "y": 101.074,
      "quadrant": "Improving",
-     "perf4w": 8.17
+     "perf4w": 7.99
     },
     {
      "name": "SOL",
      "ticker": "SOL-USD",
      "cls": "Crypto",
      "proxy": false,
-     "x": 91.654,
-     "y": 103.29,
+     "x": 91.868,
+     "y": 103.388,
      "quadrant": "Improving",
-     "perf4w": 8.16
+     "perf4w": 5.89
     },
     {
      "name": "XRP",
      "ticker": "XRP-USD",
      "cls": "Crypto",
      "proxy": false,
-     "x": 87.758,
-     "y": 99.493,
+     "x": 87.899,
+     "y": 99.667,
      "quadrant": "Lagging",
-     "perf4w": -3.63
+     "perf4w": -3.39
     }
    ],
    "skipped": [
