@@ -120,8 +120,16 @@
   .ctable .chk{accent-color:#2f6fd0; cursor:pointer}
   .ctable tr.showall td{color:#fff; background:#131313}
 
-  /* ---- price chart panel (finviz-style) ---- */
-  .pricepanel{border-top:2px solid #2a2a2a; background:#0b0e14; padding:6px 10px 8px}
+  /* ---- price chart popup (finviz-style floating card) ---- */
+  .pricepop{position:absolute; z-index:25; background:#0e1119; border:1px solid #3a4356;
+    box-shadow:0 8px 28px rgba(0,0,0,.85), 0 0 0 1px rgba(184,134,11,.25); padding:0 0 4px}
+  .pcTitle{background:#262c3a; color:#e8edf5; font-weight:bold; font-size:13px; letter-spacing:.02em;
+    padding:5px 10px; display:flex; align-items:center; gap:8px}
+  .pcTitle .pcclose{margin-left:auto; background:var(--red-bar); color:#fff; border:1px solid #922;
+    padding:0 9px; cursor:pointer; font-family:inherit; font-size:12px; line-height:18px}
+  .pcRs{padding:4px 10px 0; font-size:12px; color:#dce8f5}
+  .pcRs .lbl{color:#7fa8cc}
+  .pricepanel{background:transparent; padding:0 10px 4px}
   .pcHead{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding-bottom:4px}
   .pcHead .sym{font-size:17px; font-weight:bold; color:#e8edf5}
   .pcHead .nm{color:#8a93a5; font-size:12px}
@@ -130,9 +138,7 @@
   .pcHead .rngbtn{background:#161b26; border:1px solid #2a3245; color:#8a93a5; font-size:11px;
     padding:1px 8px; cursor:pointer; font-family:inherit}
   .pcHead .rngbtn.on{color:#fff; border-color:#4a6fd0; background:#1c2946}
-  .pcHead .pcclose{margin-left:auto; background:var(--red-bar); color:#fff; border:1px solid #922;
-    padding:1px 10px; cursor:pointer; font-family:inherit; font-size:12px}
-  .pcBody{position:relative; height:280px}
+  .pcBody{position:relative; height:200px}
   .pcBody svg{display:block; width:100%; height:100%}
   .pcMsg{color:#8a93a5; font-size:12px; padding:20px; text-align:center}
 
@@ -279,6 +285,7 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
   useEffect(() => {                                 // wheel zoom anchored at the cursor
     const el = wrapRef.current; if (!el) return;
     const onWheel = e => {
+      if (e.target.closest && e.target.closest(".pricepop")) return;  // don't zoom under the popup
       e.preventDefault();
       const g = geomRef.current, r = el.getBoundingClientRect();
       const px = e.clientX - r.left, py = e.clientY - r.top;
@@ -351,6 +358,7 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
   }
   const onMove = e => {
     if (dragRef.current && dragRef.current.moved) return;   // no tooltips while panning
+    if (e.target.closest && e.target.closest(".pricepop")) return;  // ignore over popup
     const r = wrapRef.current.getBoundingClientRect();
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     let best = null, bd = 14*14;
@@ -438,22 +446,18 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
           {hover.head && <span style={{color:"#ffd11a"}}> ● latest · {hover.a.quadrant}</span>}
         </div>
       )}
-      {/* pinned info box for the asset whose price panel is open */}
-      {selected && !hover && assets.some(a => a.name === selected.name) && (() => {
+      {/* floating finviz-style price popup beside the selected point */}
+      {selected && assets.some(a => a.name === selected.name) && (() => {
         const t = trails?.[selected.name];
         const date = t ? t.dates[t.dates.length - 1] : null;
         const px = X(selected.x), py = Y(selected.y);
-        if (px < M.l - 20 || px > W - M.r + 20 || py < M.t - 20 || py > H - M.b + 20) return null;
-        return (
-          <div className="tip pinned" style={{
-            left: Math.max(4, Math.min(px + 14, dim.w - 200)),
-            top:  Math.max(4, Math.min(py - 64, dim.h - 80)) }}>
-            <b>{CODE[selected.name] || selected.name}</b> — {selected.name}{selected.proxy ? " (proxy)" : ""}<br/>
-            <span className="lbl">RS-Ratio</span> {fmt2(selected.x)} &nbsp;
-            <span className="lbl">RS-Mom</span> {fmt2(selected.y)}<br/>
-            {date && <><span className="lbl">Date</span> {date} </>}
-            <span style={{color:"#ffd11a"}}> ● latest · {selected.quadrant}</span>
-          </div>);
+        const PW = 470, PH = 300;
+        let left = px + 18;
+        if (left + PW > dim.w - 6) left = px - PW - 18;      // flip to the left side
+        left = Math.max(6, Math.min(left, dim.w - PW - 6));
+        const top = Math.max(6, Math.min(py - PH/2, dim.h - PH - 6));
+        return <PriceChart asset={selected} rsDate={date}
+          onClose={() => onSelect(null)} popStyle={{ left, top, width: PW }}/>;
       })()}
     </div>
     </React.Fragment>
@@ -471,7 +475,7 @@ function ArrowHead({ x, y, qx, qy, size, color }){
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const chartCache = new Map();   // "sym|range" -> data (client-side session cache)
 
-function PriceChart({ asset, onClose }){
+function PriceChart({ asset, onClose, rsDate, popStyle }){
   const [range, setRange] = useState("6mo");
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -514,7 +518,7 @@ function PriceChart({ asset, onClose }){
   const chg = last && prev ? last.c - prev.c : null;
   const chgPct = chg != null ? chg / prev.c * 100 : null;
 
-  const H = 280, AXW = 58, M = { t: 8, b: 18 };
+  const H = 200, AXW = 58, M = { t: 8, b: 18 };
   const pw = Math.max(w - AXW, 200), ph = H - M.t - M.b, volH = ph * 0.18;
   let svg = null;
   if (rows.length){
@@ -562,11 +566,24 @@ function PriceChart({ asset, onClose }){
     );
   }
 
+  const stop = e => e.stopPropagation();
   return (
-    <div className="pricepanel">
+    <div className="pricepop" style={popStyle}
+      onMouseDown={stop} onDoubleClick={stop} onClick={stop} onMouseMove={stop}>
+      <div className="pcTitle">
+        {asset.name.toUpperCase()}
+        <span style={{color:"#8a93a5", fontWeight:"normal"}}>{asset.ticker}{asset.proxy ? " (proxy)" : ""}</span>
+        <button className="pcclose" onClick={onClose}>×</button>
+      </div>
+      <div className="pcRs">
+        <b>{CODE[asset.name] || asset.name}</b>&nbsp;
+        <span className="lbl">RS-Ratio</span> {fmt2(asset.x)}&nbsp;
+        <span className="lbl">RS-Mom</span> {fmt2(asset.y)}&nbsp;
+        {rsDate && <><span className="lbl">Date</span> {rsDate}&nbsp;</>}
+        <span style={{color:"#ffd11a"}}>● {asset.quadrant}</span>
+      </div>
+      <div className="pricepanel">
       <div className="pcHead">
-        <span className="sym">{CODE[asset.name] || asset.name}</span>
-        <span className="nm">{asset.name.toUpperCase()} · {asset.ticker}{asset.proxy ? " (proxy)" : ""}</span>
         {last && <span className="px">{last.c.toFixed(last.c >= 1000 ? 0 : 2)}</span>}
         {chg != null && (
           <span className={"chg " + (chg >= 0 ? "up" : "dn")}>
@@ -575,13 +592,13 @@ function PriceChart({ asset, onClose }){
         {["3mo","6mo","1y"].map(rg => (
           <button key={rg} className={"rngbtn" + (range === rg ? " on" : "")}
             onClick={() => setRange(rg)}>{rg.toUpperCase()}</button>))}
-        <span className="nm">data: Yahoo Finance</span>
-        <button className="pcclose" onClick={onClose}>× CLOSE</button>
+        <span className="nm">© Yahoo Finance</span>
       </div>
       <div className="pcBody" ref={wrapRef}>
         {err ? <div className="pcMsg">{err}</div>
              : !data ? <div className="pcMsg">Loading {asset.ticker}…</div>
              : svg}
+      </div>
       </div>
     </div>
   );
@@ -744,7 +761,6 @@ function App(){
           {blk && <RrgChart assets={visible} trails={trailBlk?.assets} range={range}
             showTrail={showTrail} labelMode={labelMode} colors={colors}
             onHover={setHover} hover={hover} onSelect={setChartAsset} selected={chartAsset}/>}
-          {chartAsset && <PriceChart asset={chartAsset} onClose={() => setChartAsset(null)}/>}
         </div>
         <div className="rpanel">
           <div className="phead"><span>Chart Interpretation</span><span>»</span></div>
