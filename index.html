@@ -120,6 +120,22 @@
   .ctable .chk{accent-color:#2f6fd0; cursor:pointer}
   .ctable tr.showall td{color:#fff; background:#131313}
 
+  /* ---- price chart panel (finviz-style) ---- */
+  .pricepanel{border-top:2px solid #2a2a2a; background:#0b0e14; padding:6px 10px 8px}
+  .pcHead{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding-bottom:4px}
+  .pcHead .sym{font-size:17px; font-weight:bold; color:#e8edf5}
+  .pcHead .nm{color:#8a93a5; font-size:12px}
+  .pcHead .px{font-weight:bold; font-size:14px}
+  .pcHead .chg.up{color:#2ecc71} .pcHead .chg.dn{color:#ef5350}
+  .pcHead .rngbtn{background:#161b26; border:1px solid #2a3245; color:#8a93a5; font-size:11px;
+    padding:1px 8px; cursor:pointer; font-family:inherit}
+  .pcHead .rngbtn.on{color:#fff; border-color:#4a6fd0; background:#1c2946}
+  .pcHead .pcclose{margin-left:auto; background:var(--red-bar); color:#fff; border:1px solid #922;
+    padding:1px 10px; cursor:pointer; font-family:inherit; font-size:12px}
+  .pcBody{position:relative; height:280px}
+  .pcBody svg{display:block; width:100%; height:100%}
+  .pcMsg{color:#8a93a5; font-size:12px; padding:20px; text-align:center}
+
   /* ---- status bar ---- */
   .statusbar{display:flex; gap:18px; flex-wrap:wrap; padding:4px 10px; background:#0d0d0d;
     border-top:1px solid #222; color:#8a8a8a; font-size:11.5px}
@@ -209,7 +225,7 @@ const fmt2 = n => n.toFixed(2);
 
 /* ================= the RRG chart (hand-drawn SVG) ================= */
 
-function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover, hover }){
+function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover, hover, onSelect }){
   const wrapRef = useRef(null);
   const [dim, setDim] = useState({ w:900, h:560 });
   const [view, setView] = useState(null);          // null = auto-fit (centered); else {xlo,xhi,ylo,yhi}
@@ -395,9 +411,12 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
                   transform={`translate(${X(p[0])} ${Y(p[1])}) rotate(${ang})`}/>;
               })}
               <rect x={X(head[0])-4.5} y={Y(head[1])-4.5} width="9" height="9" fill={col}
-                stroke={hl ? "#fff" : "#000"} strokeWidth={hl ? 1.5 : 0.5}/>
+                stroke={hl ? "#fff" : "#000"} strokeWidth={hl ? 1.5 : 0.5}
+                style={{cursor:"pointer"}} onMouseDown={e => e.stopPropagation()}
+                onClick={() => onSelect && onSelect(a)}/>
               <text x={X(head[0])} y={Y(head[1])-9} fill={col} fontSize="11" fontWeight="bold"
-                textAnchor="middle" style={{paintOrder:"stroke", stroke:"#000", strokeWidth:3}}>
+                textAnchor="middle" style={{paintOrder:"stroke", stroke:"#000", strokeWidth:3, cursor:"pointer"}}
+                onMouseDown={e => e.stopPropagation()} onClick={() => onSelect && onSelect(a)}>
                 {labelMode === "Ticker" ? (CODE[a.name] || a.name) : a.name}{a.proxy ? "*" : ""}
               </text>
             </g>);
@@ -426,6 +445,127 @@ function ArrowHead({ x, y, qx, qy, size, color }){
   const ang = Math.atan2(y - qy, x - qx) * 180/Math.PI;
   return <path d={`M 0 0 L ${-size*0.9} ${-size*0.62} L ${-size*0.9} ${size*0.62} Z`}
     fill={color} transform={`translate(${x} ${y}) rotate(${ang})`}/>;
+}
+
+/* ================= price chart panel (finviz-style candles) ================= */
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const chartCache = new Map();   // "sym|range" -> data (client-side session cache)
+
+function PriceChart({ asset, onClose }){
+  const [range, setRange] = useState("6mo");
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const wrapRef = useRef(null);
+  const [w, setW] = useState(900);
+  useEffect(() => {
+    const el = wrapRef.current; if (!el) return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth || 900));
+    ro.observe(el); return () => ro.disconnect();
+  }, []);
+  useEffect(() => {
+    let dead = false;
+    const key = asset.ticker + "|" + range;
+    setData(null); setErr(null);
+    if (chartCache.has(key)){ setData(chartCache.get(key)); return; }
+    fetch(`/api/chart?s=${encodeURIComponent(asset.ticker)}&range=${range}`)
+      .then(r => r.json().then(j => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => {
+        if (dead) return;
+        if (!ok || j.error) throw new Error(j.error || "load failed");
+        chartCache.set(key, j); setData(j);
+      })
+      .catch(e => { if (!dead) setErr(
+        location.hostname === "localhost"
+          ? "Price charts need the Cloudflare worker — open the deployed site (weekly-keys-rrg.pages.dev)"
+          : "Could not load chart: " + e.message); });
+    return () => { dead = true; };
+  }, [asset.ticker, range]);
+
+  // clean rows (drop null bars)
+  let rows = [];
+  if (data){
+    for (let i = 0; i < data.t.length; i++){
+      const o = data.o[i], h = data.h[i], l = data.l[i], c = data.c[i];
+      if ([o,h,l,c].every(v => v != null && isFinite(v)))
+        rows.push({ d: new Date(data.t[i] * 1000), o, h, l, c, v: data.v[i] || 0 });
+    }
+  }
+  const last = rows[rows.length - 1], prev = rows[rows.length - 2];
+  const chg = last && prev ? last.c - prev.c : null;
+  const chgPct = chg != null ? chg / prev.c * 100 : null;
+
+  const H = 280, AXW = 58, M = { t: 8, b: 18 };
+  const pw = Math.max(w - AXW, 200), ph = H - M.t - M.b, volH = ph * 0.18;
+  let svg = null;
+  if (rows.length){
+    const lo = Math.min(...rows.map(r => r.l)), hi = Math.max(...rows.map(r => r.h));
+    const pad = (hi - lo) * 0.05 || 1;
+    const plo = lo - pad, phi = hi + pad;
+    const vmax = Math.max(...rows.map(r => r.v), 1);
+    const n = rows.length, step = pw / n, cw = Math.max(1.5, Math.min(9, step * 0.62));
+    const Xc = i => i * step + step / 2;
+    const Yp = v => M.t + (phi - v) / (phi - plo) * (ph - volH - 6);
+    const ticks = niceTicks(plo, phi).filter((_, i, a) => a.length <= 8 || i % Math.ceil(a.length / 8) === 0);
+    const months = [];
+    rows.forEach((r, i) => { if (i === 0 || r.d.getMonth() !== rows[i-1].d.getMonth()) months.push([i, MONTHS[r.d.getMonth()]]); });
+    svg = (
+      <svg viewBox={`0 0 ${w} ${H}`} preserveAspectRatio="none">
+        <rect x="0" y="0" width={w} height={H} fill="#0b0e14"/>
+        {ticks.map(v => (
+          <g key={v}>
+            <line x1="0" y1={Yp(v)} x2={pw} y2={Yp(v)} stroke="#171c26"/>
+            <text x={pw + 6} y={Yp(v) + 4} fill="#8a93a5" fontSize="11">{v.toFixed(v >= 1000 ? 0 : 2)}</text>
+          </g>))}
+        {months.map(([i, m]) => (
+          <g key={m + i}>
+            <line x1={Xc(i)} y1={M.t} x2={Xc(i)} y2={H - M.b} stroke="#141821"/>
+            <text x={Xc(i) + 3} y={H - 5} fill="#8a93a5" fontSize="11">{m}</text>
+          </g>))}
+        {rows.map((r, i) => {
+          const up = r.c >= r.o, col = up ? "#2ecc71" : "#ef5350";
+          return (
+            <g key={i}>
+              <rect x={Xc(i) - cw/2} y={H - M.b - (r.v / vmax) * volH} width={cw}
+                height={(r.v / vmax) * volH} fill={col} opacity="0.35"/>
+              <line x1={Xc(i)} y1={Yp(r.h)} x2={Xc(i)} y2={Yp(r.l)} stroke={col} strokeWidth="1"/>
+              <rect x={Xc(i) - cw/2} y={Yp(Math.max(r.o, r.c))} width={cw}
+                height={Math.max(1, Math.abs(Yp(r.o) - Yp(r.c)))} fill={up ? "#0b0e14" : col}
+                stroke={col} strokeWidth="1"/>
+            </g>);
+        })}
+        {/* last-price tag */}
+        <rect x={pw + 2} y={Yp(last.c) - 9} width={AXW - 4} height="16" fill="#ffd11a"/>
+        <text x={pw + 6} y={Yp(last.c) + 4} fill="#000" fontSize="11" fontWeight="bold">
+          {last.c.toFixed(last.c >= 1000 ? 0 : 2)}</text>
+        <text x="8" y={M.t + 14} fill="#3a4356" fontSize="12" fontWeight="bold">DAILY</text>
+      </svg>
+    );
+  }
+
+  return (
+    <div className="pricepanel">
+      <div className="pcHead">
+        <span className="sym">{CODE[asset.name] || asset.name}</span>
+        <span className="nm">{asset.name.toUpperCase()} · {asset.ticker}{asset.proxy ? " (proxy)" : ""}</span>
+        {last && <span className="px">{last.c.toFixed(last.c >= 1000 ? 0 : 2)}</span>}
+        {chg != null && (
+          <span className={"chg " + (chg >= 0 ? "up" : "dn")}>
+            {(chg >= 0 ? "+" : "") + chg.toFixed(2)} ({(chg >= 0 ? "+" : "") + chgPct.toFixed(2)}%)
+          </span>)}
+        {["3mo","6mo","1y"].map(rg => (
+          <button key={rg} className={"rngbtn" + (range === rg ? " on" : "")}
+            onClick={() => setRange(rg)}>{rg.toUpperCase()}</button>))}
+        <span className="nm">data: Yahoo Finance</span>
+        <button className="pcclose" onClick={onClose}>× CLOSE</button>
+      </div>
+      <div className="pcBody" ref={wrapRef}>
+        {err ? <div className="pcMsg">{err}</div>
+             : !data ? <div className="pcMsg">Loading {asset.ticker}…</div>
+             : svg}
+      </div>
+    </div>
+  );
 }
 
 /* ================= help / methodology modal ================= */
@@ -472,6 +612,7 @@ function App(){
   const [hidden, setHidden] = useState(new Set());
   const [hover, setHover] = useState(null);
   const [help, setHelp] = useState(false);
+  const [chartAsset, setChartAsset] = useState(null);   // asset shown in the price panel
   const [cmd, setCmd] = useState("");
 
   useEffect(() => {
@@ -583,7 +724,8 @@ function App(){
         <div className="chartwrap">
           {blk && <RrgChart assets={visible} trails={trailBlk?.assets} range={range}
             showTrail={showTrail} labelMode={labelMode} colors={colors}
-            onHover={setHover} hover={hover}/>}
+            onHover={setHover} hover={hover} onSelect={setChartAsset}/>}
+          {chartAsset && <PriceChart asset={chartAsset} onClose={() => setChartAsset(null)}/>}
         </div>
         <div className="rpanel">
           <div className="phead"><span>Chart Interpretation</span><span>»</span></div>
@@ -601,7 +743,8 @@ function App(){
                 {allAssets.map(a => (
                   <tr key={a.name} className={hidden.has(a.name) ? "dim" : ""}
                       onClick={() => toggle(a.name)}>
-                    <td className="tick" style={{color:colors[a.name]}}>{CODE[a.name] || a.name}{a.proxy ? "*" : ""}</td>
+                    <td className="tick" style={{color:colors[a.name]}} title="Click for price chart"
+                        onClick={e => { e.stopPropagation(); setChartAsset(a); }}>{CODE[a.name] || a.name}{a.proxy ? "*" : ""}</td>
                     <td>{a.name.toUpperCase()} <span style={{color:"#7a6210"}}>{a.quadrant.toUpperCase()}</span></td>
                     <td><input type="checkbox" className="chk" readOnly checked={!hidden.has(a.name)}/></td>
                   </tr>))}

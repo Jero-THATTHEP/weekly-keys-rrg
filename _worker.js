@@ -63,6 +63,13 @@ function secondsUntilNextRefresh(){
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/chart") {
+      try { return await serveChart(url, ctx); }
+      catch (e) {
+        return new Response(JSON.stringify({ error: String(e).slice(0, 200) }),
+          { status: 502, headers: { "content-type": "application/json" } });
+      }
+    }
     if (url.pathname === "/rrg_current.json" || url.pathname === "/rrg_trails.json") {
       try {
         return await serveRrg(url.pathname, request, env, ctx);
@@ -102,6 +109,45 @@ async function serveRrg(pathname, request, env, ctx){
   ctx.waitUntil(cache.put(keyFor("/rrg_current.json"), curRes.clone()));
   ctx.waitUntil(cache.put(keyFor("/rrg_trails.json"), trlRes.clone()));
   return pathname === "/rrg_current.json" ? curRes : trlRes;
+}
+
+/* ---------------- price-chart endpoint (OHLCV proxy) ---------------- */
+// GET /api/chart?s=<yahoo symbol>&range=3mo|6mo|1y
+// Proxies Yahoo's chart API (browser can't call it directly due to CORS),
+// restricted to the dashboard's own symbols, cached 1 hour on the edge.
+
+const ALLOWED_SYMBOLS = new Set(ASSETS.flatMap(([, cands]) => cands).concat(BENCHMARK));
+const CHART_RANGES = new Set(["3mo", "6mo", "1y"]);
+
+async function serveChart(url, ctx){
+  const s = url.searchParams.get("s") || "";
+  if (!ALLOWED_SYMBOLS.has(s))
+    return new Response('{"error":"unknown symbol"}', { status: 400, headers: { "content-type": "application/json" } });
+  const range = CHART_RANGES.has(url.searchParams.get("range")) ? url.searchParams.get("range") : "6mo";
+
+  const cache = caches.default;
+  const key = new Request(`https://rrg-cache.internal/chart?s=${encodeURIComponent(s)}&range=${range}`);
+  const hit = await cache.match(key);
+  if (hit) return hit;
+
+  const u = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s)}?range=${range}&interval=1d`;
+  const r = await fetch(u, { headers: { "user-agent": "Mozilla/5.0 (RRG-dashboard)" } });
+  if (!r.ok) throw new Error("yahoo HTTP " + r.status);
+  const j = await r.json();
+  const res = j?.chart?.result?.[0];
+  const q = res?.indicators?.quote?.[0];
+  if (!res?.timestamp || !q?.close) throw new Error("no chart data");
+
+  const out = { symbol: s, range, t: res.timestamp,
+    o: q.open, h: q.high, l: q.low, c: q.close, v: q.volume,
+    prevClose: res.meta?.chartPreviousClose ?? null };
+  const resp = new Response(JSON.stringify(out), { headers: {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, s-maxage=3600",
+    "x-rrg-source": "chart-live",
+  }});
+  ctx.waitUntil(cache.put(key, resp.clone()));
+  return resp;
 }
 
 /* ---------------- Yahoo Finance download ---------------- */
