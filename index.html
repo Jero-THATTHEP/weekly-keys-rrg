@@ -233,10 +233,13 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
     const path = t ? t.points.slice(-range) : [[a.x, a.y]];
     (showTrail ? path : path.slice(-1)).forEach(p => pts.push(p));
   }
-  let axlo = Math.min(...pts.map(p=>p[0])), axhi = Math.max(...pts.map(p=>p[0]));
-  let aylo = Math.min(...pts.map(p=>p[1])), ayhi = Math.max(...pts.map(p=>p[1]));
-  const padx = Math.max((axhi-axlo)*.07, .5), pady = Math.max((ayhi-aylo)*.10, .4);
-  const auto = { xlo:axlo-padx, xhi:axhi+padx, ylo:aylo-pady, yhi:ayhi+pady };
+  const axlo = Math.min(...pts.map(p=>p[0])), axhi = Math.max(...pts.map(p=>p[0]));
+  const aylo = Math.min(...pts.map(p=>p[1])), ayhi = Math.max(...pts.map(p=>p[1]));
+  // symmetric fit around the benchmark cross: (100,100) sits at the exact
+  // centre of the chart and the half-span grows until every asset fits
+  const hx = Math.max(axhi - 100, 100 - axlo) * 1.10 + 0.4;
+  const hy = Math.max(ayhi - 100, 100 - aylo) * 1.12 + 0.3;
+  const auto = { xlo:100-hx, xhi:100+hx, ylo:100-hy, yhi:100+hy };
   const dom = view || auto;
   const { xlo, xhi, ylo, yhi } = dom;
   const X = v => M.l + (v - xlo)/(xhi - xlo)*pw;
