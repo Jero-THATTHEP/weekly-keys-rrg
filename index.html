@@ -148,6 +148,7 @@
     box-shadow:0 2px 10px rgba(0,0,0,.7)}
   .tip b{color:#fff}
   .tip .lbl{color:#7fa8cc}
+  .tip.pinned{border-color:#b8860b; box-shadow:0 2px 12px rgba(0,0,0,.8), 0 0 0 1px rgba(184,134,11,.3)}
 
   /* ---- help modal ---- */
   .modalback{position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:50;
@@ -225,7 +226,7 @@ const fmt2 = n => n.toFixed(2);
 
 /* ================= the RRG chart (hand-drawn SVG) ================= */
 
-function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover, hover, onSelect }){
+function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover, hover, onSelect, selected }){
   const wrapRef = useRef(null);
   const [dim, setDim] = useState({ w:900, h:560 });
   const [view, setView] = useState(null);          // null = auto-fit (centered); else {xlo,xhi,ylo,yhi}
@@ -397,9 +398,10 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
           const path = t ? t.points.slice(-range) : [[a.x, a.y]];
           const col = colors[a.name];
           const head = path[path.length-1];
-          const hl = hover && hover.a.name === a.name;
+          const isSel = selected && selected.name === a.name;
+          const hl = (hover && hover.a.name === a.name) || isSel;
           return (
-            <g key={a.name} opacity={hover && !hl ? 0.35 : 1}>
+            <g key={a.name} opacity={(hover || selected) && !hl ? 0.35 : 1}>
               {showTrail && path.length > 1 && (
                 <polyline points={path.map(p => `${X(p[0])},${Y(p[1])}`).join(" ")}
                   fill="none" stroke={col} strokeWidth={hl ? 2 : 1.2}/>
@@ -436,6 +438,23 @@ function RrgChart({ assets, trails, range, showTrail, labelMode, colors, onHover
           {hover.head && <span style={{color:"#ffd11a"}}> ● latest · {hover.a.quadrant}</span>}
         </div>
       )}
+      {/* pinned info box for the asset whose price panel is open */}
+      {selected && !hover && assets.some(a => a.name === selected.name) && (() => {
+        const t = trails?.[selected.name];
+        const date = t ? t.dates[t.dates.length - 1] : null;
+        const px = X(selected.x), py = Y(selected.y);
+        if (px < M.l - 20 || px > W - M.r + 20 || py < M.t - 20 || py > H - M.b + 20) return null;
+        return (
+          <div className="tip pinned" style={{
+            left: Math.max(4, Math.min(px + 14, dim.w - 200)),
+            top:  Math.max(4, Math.min(py - 64, dim.h - 80)) }}>
+            <b>{CODE[selected.name] || selected.name}</b> — {selected.name}{selected.proxy ? " (proxy)" : ""}<br/>
+            <span className="lbl">RS-Ratio</span> {fmt2(selected.x)} &nbsp;
+            <span className="lbl">RS-Mom</span> {fmt2(selected.y)}<br/>
+            {date && <><span className="lbl">Date</span> {date} </>}
+            <span style={{color:"#ffd11a"}}> ● latest · {selected.quadrant}</span>
+          </div>);
+      })()}
     </div>
     </React.Fragment>
   );
@@ -724,7 +743,7 @@ function App(){
         <div className="chartwrap">
           {blk && <RrgChart assets={visible} trails={trailBlk?.assets} range={range}
             showTrail={showTrail} labelMode={labelMode} colors={colors}
-            onHover={setHover} hover={hover} onSelect={setChartAsset}/>}
+            onHover={setHover} hover={hover} onSelect={setChartAsset} selected={chartAsset}/>}
           {chartAsset && <PriceChart asset={chartAsset} onClose={() => setChartAsset(null)}/>}
         </div>
         <div className="rpanel">
